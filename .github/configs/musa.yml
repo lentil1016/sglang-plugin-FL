@@ -14,11 +14,9 @@ runner_labels:
   - musa
   - gpu-8
 
-# Container volumes (hardware-specific paths)
-container_volumes:
-  - /data:/data
-
 # Container options (no --privileged; explicit --device for MUSA GPUs)
+# Volumes are passed as -v flags here because GitHub Actions container.volumes
+# does not support dynamic expressions.
 container_options: >-
   --hostname sglang-plugin-fl
   --ipc=host
@@ -34,3 +32,4 @@ container_options: >-
   --device=/dev/mthreads7
   --cap-add=SYS_PTRACE
   --security-opt seccomp=unconfined
+  -v /data:/data

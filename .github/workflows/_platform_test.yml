@@ -65,7 +65,6 @@ jobs:
     timeout-minutes: 60
     container:
       image: ${{ fromJson(needs.setup.outputs.config).ci_image }}
-      volumes: ${{ fromJson(needs.setup.outputs.config).container_volumes }}
       options: ${{ fromJson(needs.setup.outputs.config).container_options }}
 
     steps:
