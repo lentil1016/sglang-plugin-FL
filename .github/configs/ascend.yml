@@ -14,18 +14,9 @@ runner_labels:
   - ascend
   - npu-8
 
-# Container volumes (hardware-specific paths)
-container_volumes:
-  - /usr/local/dcmi:/usr/local/dcmi
-  - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi
-  - /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/
-  - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info
-  - /usr/local/Ascend/driver:/usr/local/Ascend/driver
-  - /usr/local/sbin:/usr/local/sbin
-  - /etc/ascend_install.info:/etc/ascend_install.info
-  - /data:/data
-
 # Container options (no --privileged; explicit --device covers all NPU access)
+# Volumes are passed as -v flags here because GitHub Actions container.volumes
+# does not support dynamic expressions.
 container_options: >-
   --hostname sglang-plugin-fl
   --ipc=host
@@ -40,3 +31,11 @@ container_options: >-
   --device /dev/davinci_manager
   --device /dev/devmm_svm
   --device /dev/hisi_hdc
+  -v /usr/local/dcmi:/usr/local/dcmi
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi
+  -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info
+  -v /usr/local/Ascend/driver:/usr/local/Ascend/driver
+  -v /usr/local/sbin:/usr/local/sbin
+  -v /etc/ascend_install.info:/etc/ascend_install.info
+  -v /data:/data

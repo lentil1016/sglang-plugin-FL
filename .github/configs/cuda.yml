@@ -14,11 +14,9 @@ runner_labels:
   - nvidia
   - gpu-8
 
-# Container volumes (hardware-specific paths)
-container_volumes:
-  - /data:/data
-
 # Container options (no --privileged; --gpus all is sufficient for NVIDIA)
+# Volumes are passed as -v flags here because GitHub Actions container.volumes
+# does not support dynamic expressions.
 container_options: >-
   --gpus all
   --hostname sglang-plugin-fl
@@ -27,3 +25,4 @@ container_options: >-
   --ulimit memlock=-1
   --ulimit stack=67108864
   --user root
+  -v /data:/data
