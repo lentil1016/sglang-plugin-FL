@@ -25,9 +25,7 @@ class TestApplyVendorPatches:
             _apply_vendor_patches()
         assert "vendor patch absent" in caplog.text
 
-    def test_detector_failure_skips_without_raising(
-        self, caplog, mock_device_detector
-    ):
+    def test_detector_failure_skips_without_raising(self, caplog, mock_device_detector):
         """DeviceDetector raising must not crash load_plugin — vendor patch is
         optional. Expected behaviour: warning log + early return, no attempt
         to import patch.py."""
@@ -37,9 +35,7 @@ class TestApplyVendorPatches:
         assert "vendor patch skipped" in caplog.text
         assert "no hardware found" in caplog.text
 
-    def test_non_import_error_propagates(
-        self, mock_device_detector, monkeypatch
-    ):
+    def test_non_import_error_propagates(self, mock_device_detector, monkeypatch):
         """Only ImportError is treated as 'absent'. Any other exception from
         the vendor patch.py's own import-time code must bubble up."""
         mock_device_detector("fakevendor")

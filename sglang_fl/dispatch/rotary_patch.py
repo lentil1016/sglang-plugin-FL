@@ -91,6 +91,4 @@ def patch_rotary_embedding_init() -> None:
         )
 
     except Exception as exc:
-        logger.error(
-            "rotary_patch: failed to patch rotary embedding __init__: %s", exc
-        )
+        logger.error("rotary_patch: failed to patch rotary embedding __init__: %s", exc)

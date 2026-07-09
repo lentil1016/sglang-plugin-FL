@@ -11,4 +11,3 @@ def fused_moe_musa(
     dispatch_output,
 ):
     return obj.forward_musa(layer, dispatch_output)
-

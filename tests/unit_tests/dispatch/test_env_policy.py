@@ -3,15 +3,12 @@
 import os
 from unittest.mock import patch
 
-import pytest
 
 from sglang_fl.dispatch.policy import (
     PREFER_DEFAULT,
     PREFER_REFERENCE,
     PREFER_VENDOR,
     PolicyManager,
-    SelectionPolicy,
-    reset_global_policy,
 )
 
 
@@ -108,14 +105,18 @@ class TestEnvVarDenyVendors:
             assert "ascend" in policy.deny_vendors
 
     def test_multiple_vendors(self):
-        with patch.dict(os.environ, {"SGLANG_FL_DENY_VENDORS": "ascend,metax,iluvatar"}, clear=False):
+        with patch.dict(
+            os.environ, {"SGLANG_FL_DENY_VENDORS": "ascend,metax,iluvatar"}, clear=False
+        ):
             pm = PolicyManager.get_instance()
             pm.reset_global_policy()
             policy = pm.get_policy()
             assert policy.deny_vendors == frozenset({"ascend", "metax", "iluvatar"})
 
     def test_whitespace_handling(self):
-        with patch.dict(os.environ, {"SGLANG_FL_DENY_VENDORS": " ascend , metax "}, clear=False):
+        with patch.dict(
+            os.environ, {"SGLANG_FL_DENY_VENDORS": " ascend , metax "}, clear=False
+        ):
             pm = PolicyManager.get_instance()
             pm.reset_global_policy()
             policy = pm.get_policy()
@@ -148,7 +149,9 @@ class TestEnvVarAllowVendors:
             assert policy.allow_vendors == frozenset({"cuda"})
 
     def test_multiple_vendors(self):
-        with patch.dict(os.environ, {"SGLANG_FL_ALLOW_VENDORS": "cuda,ascend"}, clear=False):
+        with patch.dict(
+            os.environ, {"SGLANG_FL_ALLOW_VENDORS": "cuda,ascend"}, clear=False
+        ):
             pm = PolicyManager.get_instance()
             pm.reset_global_policy()
             policy = pm.get_policy()
@@ -167,7 +170,11 @@ class TestEnvVarPerOp:
     """Test SGLANG_FL_PER_OP env var."""
 
     def test_single_op(self):
-        with patch.dict(os.environ, {"SGLANG_FL_PER_OP": "silu_and_mul=vendor|flagos|reference"}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"SGLANG_FL_PER_OP": "silu_and_mul=vendor|flagos|reference"},
+            clear=False,
+        ):
             pm = PolicyManager.get_instance()
             pm.reset_global_policy()
             policy = pm.get_policy()
@@ -265,10 +272,7 @@ class TestEnvVarConfigFile:
     def test_config_file_overrides_env(self, tmp_path):
         config_file = tmp_path / "dispatch.yaml"
         config_file.write_text(
-            "prefer: reference\n"
-            "strict: false\n"
-            "deny_vendors:\n"
-            "  - cuda\n"
+            "prefer: reference\nstrict: false\ndeny_vendors:\n  - cuda\n"
         )
         env = {
             "SGLANG_FL_CONFIG": str(config_file),

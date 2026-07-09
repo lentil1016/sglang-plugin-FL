@@ -16,7 +16,7 @@ def topk_ascend(
     num_token_non_padded: Optional[torch.Tensor] = None,
     expert_location_dispatch_info=None,
 ):
-    
+
     from sglang.srt.hardware_backend.npu.moe.topk import fused_topk_npu
 
     return fused_topk_npu(
