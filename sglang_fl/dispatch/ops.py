@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
-import torch
+if TYPE_CHECKING:
+    import torch
 
 
 class FLBackendBase(ABC):

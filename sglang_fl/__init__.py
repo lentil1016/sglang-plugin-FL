@@ -44,8 +44,6 @@ import logging
 import multiprocessing
 import os
 
-import torch
-
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     _handler = logging.StreamHandler()
@@ -467,6 +465,8 @@ def _setup_communicator_hooks():
       - broadcast_tensor_dict, send_tensor_dict, recv_tensor_dict:
         full method intercept for FlagCX coverage on composite operations
     """
+    import torch
+
     from sglang.srt.plugins.hook_registry import HookRegistry, HookType
 
     _GC_TARGET = "sglang.srt.distributed.parallel_state.GroupCoordinator"

@@ -40,8 +40,12 @@ jobs:
           pip install -e . --no-build-isolation || echo "::warning::editable install failed; tests may rely on PYTHONPATH"
 
       - name: Run unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          pytest tests/unit_tests/ -v --tb=short --timeout=60 \
+          # Only run dispatch tests here (pure logic, no torch/hardware).
+          # Platform tests require torch+sglang and run in the platform test job.
+          pytest tests/unit_tests/dispatch/ -v --tb=short --timeout=60 \
             --junitxml=test-results-unit.xml
 
       - name: Upload test results

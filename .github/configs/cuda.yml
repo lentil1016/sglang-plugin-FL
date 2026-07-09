@@ -8,11 +8,7 @@ ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-cuda-ci
 
 # Runner labels for this hardware
 runner_labels:
-  - self-hosted
-  - Linux
-  - X64
-  - nvidia
-  - gpu-8
+  - egontest
 
 # Container options (no --privileged; --gpus all is sufficient for NVIDIA)
 # --user root is required: CI images install CUDA/NCCL libs under system paths,
