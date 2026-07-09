@@ -38,7 +38,7 @@ _DIST_BACKEND_MAP = {
 }
 
 # Attention backend mapping: vendor_name -> default backend
-# The value must match a name registered in sglang.srt.layers.attention.attention_registry. 
+# The value must match a name registered in sglang.srt.layers.attention.attention_registry.
 _ATTN_BACKEND_MAP = {
     "nvidia": "flashinfer",
     "ascend": "ascend",

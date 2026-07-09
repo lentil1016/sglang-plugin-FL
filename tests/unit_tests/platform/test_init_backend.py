@@ -22,9 +22,7 @@ def _make_platform_stub(vendor_name, device_type="test_device"):
 
 
 class TestInitBackendVendorAutoImport:
-    def test_loaded_when_register_platform_exists(
-        self, caplog, inject_vendor_module
-    ):
+    def test_loaded_when_register_platform_exists(self, caplog, inject_vendor_module):
         inject_vendor_module("fakevendor", "register_platform")
         p = _make_platform_stub("fakevendor")
         with caplog.at_level(logging.INFO, logger="sglang_fl.platform"):

@@ -70,13 +70,12 @@ class TestLoadPluginIdempotency:
         def _count(key):
             def _inc(*a, **kw):
                 call_count[key] += 1
+
             return _inc
 
         monkeypatch.setattr(sglang_fl, "_setup_flaggems", _count("flaggems"))
         monkeypatch.setattr(sglang_fl, "_init_dispatch", lambda *a, **kw: None)
-        monkeypatch.setattr(
-            sglang_fl, "_setup_communicator_hooks", lambda: None
-        )
+        monkeypatch.setattr(sglang_fl, "_setup_communicator_hooks", lambda: None)
         monkeypatch.setattr(
             sglang_fl, "_apply_vendor_patches", _count("vendor_patches")
         )
