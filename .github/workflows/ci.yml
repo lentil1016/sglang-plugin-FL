@@ -1,59 +1,38 @@
+# CI Workflow for SGLang Plugin FL
+# Orchestrates lint, build, and per-platform testing.
 name: CI
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '0 18 * * *'  # daily at 2:00 AM CST (UTC+8)
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "examples/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-permissions:
-  contents: read
-  pull-requests: write
+  cancel-in-progress: true
 
 jobs:
   # ============================================================
   # Job 1: Lint (ruff check, ruff format, typos)
   # ============================================================
   lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Ruff check
-        run: ruff check --output-format=github .
-
-      - name: Ruff format check
-        run: ruff format --check .
-
-      - name: Typos check
-        uses: crate-ci/typos@v1
+    uses: ./.github/workflows/_lint.yml
 
   # ============================================================
-  # Job 2: Security Audit (three-level response)
-  #
-  # Automatically analyzes PR diffs for security risks:
-  #   BLOCK -> pipeline stops (immediate attack surface expansion)
-  #   WARN  -> PR comment posted, pipeline continues
-  #   PASS  -> all clear
-  #
-  # Project owners can skip by adding 'skip-security-audit' label.
+  # Job 2: Security Audit (PR only)
+  # Analyzes PR diffs for security risks via static + LLM analysis.
+  # Skip by adding 'skip-security-audit' label.
   # ============================================================
   security-audit:
-    name: Security Audit
     needs: lint
     if: >-
       github.event_name == 'pull_request' &&
@@ -65,34 +44,87 @@ jobs:
       SECURITY_AUDIT_MODEL: ${{ secrets.SECURITY_AUDIT_MODEL }}
 
   # ============================================================
-  # Job 3: Tests (placeholder for future GPU tests)
-  #
-  # Depends on security-audit. If audit is skipped (label or
-  # non-PR event), tests still run.
+  # Job 3: Build & install check
   # ============================================================
-  test:
-    name: Test
-    needs: [lint, security-audit]
-    if: >-
-      always() &&
-      needs.lint.result == 'success' &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+  build:
+    needs: lint
+    uses: ./.github/workflows/_build_wheel.yml
+
+  # ============================================================
+  # Job 3: Unit tests (CPU-only, no hardware needed)
+  # ============================================================
+  unit:
+    needs: build
+    uses: ./.github/workflows/_unit_test.yml
+
+  # ============================================================
+  # Job 4: Discover which platforms to test
+  # ============================================================
+  discover:
+    needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platforms: ${{ steps.detect.outputs.platforms }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Checkout (attempt 1)
+        id: checkout1
+        uses: actions/checkout@v4
         with:
-          python-version: "3.12"
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+        continue-on-error: true
+      - name: Checkout (attempt 2)
+        id: checkout2
+        if: steps.checkout1.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+        continue-on-error: true
+      - name: Checkout (attempt 3)
+        if: steps.checkout2.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - id: detect
+        run: python3 .github/scripts/detect_platforms.py
 
-      - name: Install package
-        run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+  # ============================================================
+  # Job 5a: CUDA platform testing
+  # ============================================================
+  test-cuda:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'cuda')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: cuda
+    secrets: inherit
 
-      - name: Run unit tests
-        run: |
-          if [ -d "tests" ]; then
-            python -m pytest tests/ -x --timeout=60 2>/dev/null || echo "No pytest or tests skipped"
-          else
-            echo "No tests directory — skipping"
-          fi
+  # ============================================================
+  # Job 5b: Ascend platform testing
+  # ============================================================
+  test-ascend:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'ascend')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: ascend
+    secrets: inherit
+
+  # ============================================================
+  # Job 5c: MUSA platform testing
+  # ============================================================
+  test-musa:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'musa')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: musa
+    secrets: inherit
