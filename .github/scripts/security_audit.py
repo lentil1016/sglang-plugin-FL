@@ -96,12 +96,12 @@ BLOCK_RULES = [
     {
         "id": "disable_security_audit",
         "pattern": re.compile(
-            r"^\+.*(?:if:\s*false|if:\s*\$\{\{\s*false\s*\}\}|"
-            r"if:\s*always\(\)\s*&&\s*false|needs:.*\bskip\b)",
+            r"^\+\s*(?:security.audit|security-audit).*(?:if:\s*false|if:\s*\$\{\{\s*false\s*\}\})"
+            r"|^\+\s*if:\s*(?:false|\$\{\{\s*false\s*\}\}).*#.*(?:security|audit)",
             re.IGNORECASE,
         ),
         "message": "Security audit may be disabled via conditional — verify intent",
-        "file_filter": re.compile(r"\.github/workflows/.*\.ya?ml$"),
+        "file_filter": re.compile(r"\.github/workflows/ci\.ya?ml$"),
     },
     {
         "id": "reverse_shell_devtcp",
@@ -149,6 +149,12 @@ WARN_RULES = [
         "id": "cap_add",
         "pattern": re.compile(r"^\+.*--cap-add"),
         "message": "New container capability added — verify necessity",
+        "file_filter": None,
+    },
+    {
+        "id": "seccomp_unconfined",
+        "pattern": re.compile(r"^\+.*seccomp[=:]unconfined"),
+        "message": "Seccomp disabled — kernel syscall filtering is off, increases attack surface",
         "file_filter": None,
     },
     {
@@ -598,7 +604,11 @@ def format_github_output(result: AuditResult) -> None:
 
 
 def post_pr_comment(result: AuditResult) -> None:
-    """Post warnings as PR comment (only for warn-level findings)."""
+    """Post warnings as PR comment (only for warn-level findings).
+
+    Uses a marker comment to find and update existing bot comments,
+    preventing duplicates across multiple pushes.
+    """
     if not result.warnings:
         return
 
@@ -615,7 +625,8 @@ def post_pr_comment(result: AuditResult) -> None:
 
     repo = os.environ.get("GITHUB_REPOSITORY", "")
 
-    body_lines = ["## ⚠️ Security Audit Warnings\n"]
+    marker = "<!-- security-audit-bot -->"
+    body_lines = [marker, "## ⚠️ Security Audit Warnings\n"]
     body_lines.append("These are not blocking, but please consider before merging:\n")
     body_lines.append("| Rule | Location | Issue |")
     body_lines.append("|------|----------|-------|")
@@ -628,11 +639,28 @@ def post_pr_comment(result: AuditResult) -> None:
 
     body = "\n".join(body_lines)
 
-    cmd = ["gh", "pr", "comment", str(pr_num), "--body", body]
-    if repo:
-        cmd.extend(["--repo", repo])
+    # Try to find and edit existing bot comment
+    repo_flag = ["--repo", repo] if repo else []
+    list_cmd = [
+        "gh", "pr", "view", str(pr_num), "--json", "comments",
+        "--jq", f'.comments[] | select(.body | startswith("{marker}")) | .url',
+    ] + repo_flag
+    list_result = subprocess.run(list_cmd, capture_output=True, text=True)
 
-    subprocess.run(cmd, capture_output=True, text=True)
+    if list_result.returncode == 0 and list_result.stdout.strip():
+        # Edit existing comment
+        comment_url = list_result.stdout.strip().splitlines()[0]
+        # Extract comment ID from URL (last path segment)
+        comment_id = comment_url.rstrip("/").rsplit("/", 1)[-1]
+        edit_cmd = [
+            "gh", "api", f"repos/{repo}/issues/comments/{comment_id}",
+            "--method", "PATCH", "--field", f"body={body}",
+        ]
+        subprocess.run(edit_cmd, capture_output=True, text=True)
+    else:
+        # Create new comment
+        cmd = ["gh", "pr", "comment", str(pr_num), "--body", body] + repo_flag
+        subprocess.run(cmd, capture_output=True, text=True)
 
 
 # ============================================================

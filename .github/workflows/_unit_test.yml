@@ -35,8 +35,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pytest pytest-timeout pyyaml
-          # Install in mock mode — flag_gems not needed for unit tests
-          pip install -e . --no-build-isolation 2>/dev/null || true
+          # Install in editable mode — flag_gems runtime not needed for unit tests.
+          # Allow failure (missing native deps) but keep stderr visible for debugging.
+          pip install -e . --no-build-isolation || echo "::warning::editable install failed; tests may rely on PYTHONPATH"
 
       - name: Run unit tests
         run: |

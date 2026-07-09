@@ -24,5 +24,4 @@ container_options: >-
   --shm-size=64g
   --ulimit memlock=-1
   --ulimit stack=67108864
-  --user root
   -v /data/models:/data/models
