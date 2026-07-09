@@ -390,7 +390,20 @@ def _prepare_llm_input(hunks: list[DiffHunk]) -> Optional[str]:
     if not relevant_parts:
         return None
 
-    return "\n\n".join(relevant_parts)
+    combined = "\n\n".join(relevant_parts)
+
+    # Truncate to avoid exceeding model context window (~100K chars ≈ 25K tokens)
+    max_chars = 100_000
+    if len(combined) > max_chars:
+        combined = (
+            combined[:max_chars] + "\n\n[... TRUNCATED — diff too large for LLM review]"
+        )
+        print(
+            f"::warning::LLM audit input truncated from {len(combined)} to {max_chars} chars",
+            file=sys.stderr,
+        )
+
+    return combined
 
 
 def _call_anthropic_api(diff_content: str) -> Optional[dict]:
@@ -642,8 +655,14 @@ def post_pr_comment(result: AuditResult) -> None:
     # Try to find and edit existing bot comment
     repo_flag = ["--repo", repo] if repo else []
     list_cmd = [
-        "gh", "pr", "view", str(pr_num), "--json", "comments",
-        "--jq", f'.comments[] | select(.body | startswith("{marker}")) | .url',
+        "gh",
+        "pr",
+        "view",
+        str(pr_num),
+        "--json",
+        "comments",
+        "--jq",
+        f'.comments[] | select(.body | contains("{marker}")) | .url',
     ] + repo_flag
     list_result = subprocess.run(list_cmd, capture_output=True, text=True)
 
@@ -653,8 +672,13 @@ def post_pr_comment(result: AuditResult) -> None:
         # Extract comment ID from URL (last path segment)
         comment_id = comment_url.rstrip("/").rsplit("/", 1)[-1]
         edit_cmd = [
-            "gh", "api", f"repos/{repo}/issues/comments/{comment_id}",
-            "--method", "PATCH", "--field", f"body={body}",
+            "gh",
+            "api",
+            f"repos/{repo}/issues/comments/{comment_id}",
+            "--method",
+            "PATCH",
+            "--field",
+            f"body={body}",
         ]
         subprocess.run(edit_cmd, capture_output=True, text=True)
     else:
