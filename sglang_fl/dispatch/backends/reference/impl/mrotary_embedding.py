@@ -74,8 +74,10 @@ def mrotary_embedding_torch(
     else:
         # 1D positions (text-only, or 2D without mrope_section)
         pos_1d = positions[0] if positions.ndim == 2 else positions
-        cos_sin = cos_sin_cache[pos_1d]          # [num_tokens, rotary_dim]
-        cos_merged, sin_merged = cos_sin.chunk(2, dim=-1)   # each: [num_tokens, rotary_dim//2]
+        cos_sin = cos_sin_cache[pos_1d]  # [num_tokens, rotary_dim]
+        cos_merged, sin_merged = cos_sin.chunk(
+            2, dim=-1
+        )  # each: [num_tokens, rotary_dim//2]
 
     # ── Apply RoPE ───────────────────────────────────────────────────────────
     # Reshape to [num_tokens, num_heads, head_size]
@@ -108,14 +110,22 @@ def mrotary_embedding_torch(
         k_embed = key_rot * cos_full + torch.cat((-k2, k1), dim=-1) * sin_full
     else:
         # interleaved: cos = [cos0,cos0, cos1,cos1, ...]
-        cos_full = torch.stack([cos_merged, cos_merged], dim=-1).flatten(-2).unsqueeze(1)
-        sin_full = torch.stack([sin_merged, sin_merged], dim=-1).flatten(-2).unsqueeze(1)
+        cos_full = (
+            torch.stack([cos_merged, cos_merged], dim=-1).flatten(-2).unsqueeze(1)
+        )
+        sin_full = (
+            torch.stack([sin_merged, sin_merged], dim=-1).flatten(-2).unsqueeze(1)
+        )
 
         q1, q2 = query_rot[..., ::2], query_rot[..., 1::2]
-        q_embed = query_rot * cos_full + torch.stack((-q2, q1), dim=-1).flatten(-2) * sin_full
+        q_embed = (
+            query_rot * cos_full + torch.stack((-q2, q1), dim=-1).flatten(-2) * sin_full
+        )
 
         k1, k2 = key_rot[..., ::2], key_rot[..., 1::2]
-        k_embed = key_rot * cos_full + torch.stack((-k2, k1), dim=-1).flatten(-2) * sin_full
+        k_embed = (
+            key_rot * cos_full + torch.stack((-k2, k1), dim=-1).flatten(-2) * sin_full
+        )
 
     # Reassemble and restore original shape
     if query_pass.shape[-1] > 0:

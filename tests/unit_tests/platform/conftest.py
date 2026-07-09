@@ -22,20 +22,22 @@ def mock_device_detector(monkeypatch):
     def _make(vendor_name=None, raise_exc=None):
         fake_mod = types.ModuleType("flag_gems.runtime.backend.device")
         if raise_exc is not None:
+
             def _detector_fail(*args, **kwargs):
                 raise raise_exc
+
             fake_mod.DeviceDetector = _detector_fail
         else:
+
             class FakeDetector:
                 def __init__(self):
                     self.vendor_name = vendor_name
+
             fake_mod.DeviceDetector = FakeDetector
 
         for name in ("flag_gems", "flag_gems.runtime", "flag_gems.runtime.backend"):
             monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
-        monkeypatch.setitem(
-            sys.modules, "flag_gems.runtime.backend.device", fake_mod
-        )
+        monkeypatch.setitem(sys.modules, "flag_gems.runtime.backend.device", fake_mod)
 
     return _make
 

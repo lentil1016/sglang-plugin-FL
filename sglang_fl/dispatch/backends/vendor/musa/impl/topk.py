@@ -71,7 +71,9 @@ def topk_musa(
     correction_bias = topk_cfg.correction_bias
 
     M = hidden_states.shape[0]
-    topk_weights = torch.empty(M, topk, dtype=torch.float32, device=hidden_states.device)
+    topk_weights = torch.empty(
+        M, topk, dtype=torch.float32, device=hidden_states.device
+    )
     topk_ids = torch.empty(M, topk, dtype=torch.int32, device=hidden_states.device)
 
     # Triton kernels expect float32 gating logits.

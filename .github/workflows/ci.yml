@@ -1,0 +1,110 @@
+# CI Workflow for SGLang Plugin FL
+# Orchestrates lint, build, and per-platform testing.
+name: CI
+
+on:
+  schedule:
+    - cron: '0 18 * * *'  # daily at 2:00 AM CST (UTC+8)
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "examples/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ============================================================
+  # Job 1: Lint (ruff check, ruff format, typos)
+  # ============================================================
+  lint:
+    uses: ./.github/workflows/_lint.yml
+
+  # ============================================================
+  # Job 2: Security Audit (PR only)
+  # ============================================================
+  security-audit:
+    needs: lint
+    if: >-
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-security-audit')
+    uses: ./.github/workflows/_security_audit.yml
+    secrets: inherit
+
+  # ============================================================
+  # Job 3: Build & install check
+  # ============================================================
+  build:
+    needs: lint
+    uses: ./.github/workflows/_build_wheel.yml
+
+  # ============================================================
+  # Job 4: Unit tests (CPU-only, no hardware needed)
+  # ============================================================
+  unit:
+    needs: build
+    uses: ./.github/workflows/_unit_test.yml
+
+  # ============================================================
+  # Job 5: Discover which platforms to test
+  # ============================================================
+  discover:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platforms: ${{ steps.detect.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - id: detect
+        run: python3 .github/scripts/detect_platforms.py
+
+  # ============================================================
+  # Job 6a: CUDA platform testing
+  # ============================================================
+  test-cuda:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'cuda')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: cuda
+    secrets: inherit
+
+  # ============================================================
+  # Job 6b: Ascend platform testing
+  # ============================================================
+  test-ascend:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'ascend')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: ascend
+    secrets: inherit
+
+  # ============================================================
+  # Job 6c: MUSA platform testing
+  # ============================================================
+  test-musa:
+    needs: discover
+    if: contains(fromJson(needs.discover.outputs.platforms), 'musa')
+    uses: ./.github/workflows/_platform_test.yml
+    with:
+      platform: musa
+    secrets: inherit

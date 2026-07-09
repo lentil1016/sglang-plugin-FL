@@ -1,13 +1,13 @@
 # Tests for call_op / resolve_op high-level API and builtin_ops registration.
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
 from sglang_fl.dispatch.registry import OpRegistry
-from sglang_fl.dispatch.manager import OpManager, get_default_manager, reset_default_manager
+from sglang_fl.dispatch.manager import get_default_manager, reset_default_manager
 from sglang_fl.dispatch import call_op, resolve_op
 from sglang_fl.dispatch.policy import (
     reset_global_policy,
@@ -38,13 +38,15 @@ class TestCallOp:
         def test_fn(*a, **kw):
             return "test_result"
 
-        registry.register_impl(OpImpl(
-            op_name="test_op",
-            impl_id="default.flagos",
-            kind=BackendImplKind.DEFAULT,
-            fn=test_fn,
-            priority=BackendPriority.DEFAULT,
-        ))
+        registry.register_impl(
+            OpImpl(
+                op_name="test_op",
+                impl_id="default.flagos",
+                kind=BackendImplKind.DEFAULT,
+                fn=test_fn,
+                priority=BackendPriority.DEFAULT,
+            )
+        )
 
         result = call_op("test_op")
         assert result == "test_result"
@@ -60,13 +62,15 @@ class TestCallOp:
         def test_fn(*a, **kw):
             return "resolved"
 
-        registry.register_impl(OpImpl(
-            op_name="test_op",
-            impl_id="default.flagos",
-            kind=BackendImplKind.DEFAULT,
-            fn=test_fn,
-            priority=BackendPriority.DEFAULT,
-        ))
+        registry.register_impl(
+            OpImpl(
+                op_name="test_op",
+                impl_id="default.flagos",
+                kind=BackendImplKind.DEFAULT,
+                fn=test_fn,
+                priority=BackendPriority.DEFAULT,
+            )
+        )
 
         fn = resolve_op("test_op")
         assert callable(fn)
@@ -153,23 +157,25 @@ class TestFullPipeline:
             results.append("vendor")
             return "vendor"
 
-        registry.register_many([
-            OpImpl(
-                op_name="pipeline_op",
-                impl_id="default.flagos",
-                kind=BackendImplKind.DEFAULT,
-                fn=flagos_fn,
-                priority=BackendPriority.DEFAULT,
-            ),
-            OpImpl(
-                op_name="pipeline_op",
-                impl_id="vendor.cuda",
-                kind=BackendImplKind.VENDOR,
-                fn=vendor_fn,
-                vendor="cuda",
-                priority=BackendPriority.VENDOR,
-            ),
-        ])
+        registry.register_many(
+            [
+                OpImpl(
+                    op_name="pipeline_op",
+                    impl_id="default.flagos",
+                    kind=BackendImplKind.DEFAULT,
+                    fn=flagos_fn,
+                    priority=BackendPriority.DEFAULT,
+                ),
+                OpImpl(
+                    op_name="pipeline_op",
+                    impl_id="vendor.cuda",
+                    kind=BackendImplKind.VENDOR,
+                    fn=vendor_fn,
+                    vendor="cuda",
+                    priority=BackendPriority.VENDOR,
+                ),
+            ]
+        )
 
         # Default preference → flagos
         result = call_op("pipeline_op")

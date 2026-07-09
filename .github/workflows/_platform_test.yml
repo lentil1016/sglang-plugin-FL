@@ -1,0 +1,131 @@
+# Per-platform test workflow, invoked by ci.yml via workflow_call.
+#
+# Main steps:
+# 1. setup:    Load platform config
+# 2. test:     Run platform-specific tests (device check → install → tests)
+#
+# Platform configs live in .github/configs/<platform>.yml.
+# Per-platform scripts live in .github/scripts/<platform>/{check,setup}.sh.
+name: Platform Test
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+    secrets:
+      FEISHU_APP_ID:
+        required: false
+      FEISHU_APP_SECRET:
+        required: false
+      FEISHU_CHAT_ID:
+        required: false
+
+jobs:
+  setup:
+    name: "Setup (${{ inputs.platform }})"
+    runs-on: ubuntu-latest
+    outputs:
+      config: ${{ steps.load.outputs.config }}
+    steps:
+      - name: Checkout (attempt 1)
+        id: checkout1
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+        continue-on-error: true
+      - name: Checkout (attempt 2)
+        id: checkout2
+        if: steps.checkout1.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+        continue-on-error: true
+      - name: Checkout (attempt 3)
+        if: steps.checkout2.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/configs
+            .github/scripts
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - id: load
+        run: python .github/scripts/load_config.py --platform ${{ inputs.platform }}
+
+  test:
+    name: "Test (${{ inputs.platform }})"
+    needs: setup
+    runs-on: ${{ fromJson(needs.setup.outputs.config).runner_labels }}
+    timeout-minutes: 60
+    container:
+      image: ${{ fromJson(needs.setup.outputs.config).ci_image }}
+      options: ${{ fromJson(needs.setup.outputs.config).container_options }}
+
+    steps:
+      - name: Checkout (attempt 1)
+        id: checkout1
+        uses: actions/checkout@v4
+        continue-on-error: true
+      - name: Checkout (attempt 2)
+        id: checkout2
+        if: steps.checkout1.outcome == 'failure'
+        uses: actions/checkout@v4
+        continue-on-error: true
+      - name: Checkout (attempt 3)
+        if: steps.checkout2.outcome == 'failure'
+        uses: actions/checkout@v4
+
+      - name: Check device availability
+        run: bash .github/scripts/${{ inputs.platform }}/check.sh
+
+      - name: Install project
+        run: bash .github/scripts/${{ inputs.platform }}/setup.sh
+
+      # ─── Functional Tests (ops correctness) ───────────────────
+      - name: Run unit tests on device
+        run: |
+          echo "TODO: Add device-specific unit tests"
+          pytest tests/unit_tests/ -v --tb=short --timeout=60 || true
+
+      # ─── Placeholder: Ops Correctness Tests ───────────────────
+      - name: Run ops correctness tests
+        run: |
+          echo "TODO: Add per-platform ops correctness tests"
+          echo "Expected: tests/functional/${{ inputs.platform }}/test_ops.py"
+          # pytest tests/functional/${{ inputs.platform }}/ -v --tb=short || true
+
+      # ─── Placeholder: Dispatch Integration Tests ──────────────
+      - name: Run dispatch integration tests
+        run: |
+          echo "TODO: Add dispatch integration tests"
+          echo "Expected: verify op routing to correct backend on real hardware"
+          # pytest tests/integration/ -v -k "${{ inputs.platform }}" --tb=short || true
+
+      # ─── Placeholder: E2E Model Inference Tests ───────────────
+      - name: Run e2e inference tests
+        run: |
+          echo "TODO: Add end-to-end model inference tests"
+          echo "Expected: tests/test_e2e_config.py with MODEL_PATH set"
+          # MODEL_PATH=/data/models/Qwen2.5-0.5B-Instruct python tests/test_e2e_config.py
+
+      # ─── Placeholder: Precision Alignment Tests ───────────────
+      - name: Run precision alignment tests
+        run: |
+          echo "TODO: Add precision alignment tests"
+          echo "Expected: tests/test_precision_align.py baseline + plugin + compare"
+          # MODEL_PATH=/data/models/Qwen2.5-0.5B-Instruct bash tests/validate.sh all
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-test-${{ inputs.platform }}
+          path: |
+            test-results-*.xml
+            test-results-*.json

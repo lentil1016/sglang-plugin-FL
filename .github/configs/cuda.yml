@@ -1,0 +1,28 @@
+# CUDA Hardware Configuration
+# This file defines CI/CD settings for NVIDIA GPU testing.
+
+platform: cuda
+
+# Docker image for this hardware
+ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-cuda-ci
+
+# Runner labels for this hardware
+runner_labels:
+  - self-hosted
+  - Linux
+  - X64
+  - nvidia
+  - gpu-8
+
+# Container options (no --privileged; --gpus all is sufficient for NVIDIA)
+# Volumes are passed as -v flags here because GitHub Actions container.volumes
+# does not support dynamic expressions.
+container_options: >-
+  --gpus all
+  --hostname sglang-plugin-fl
+  --ipc=host
+  --shm-size=64g
+  --ulimit memlock=-1
+  --ulimit stack=67108864
+  --user root
+  -v /data:/data
