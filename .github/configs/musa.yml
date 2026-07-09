@@ -1,0 +1,36 @@
+# MUSA Hardware Configuration
+# This file defines CI/CD settings for Moore Threads MUSA GPU testing.
+
+platform: musa
+
+# Docker image for this hardware
+ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-musa-ci
+
+# Runner labels for this hardware
+runner_labels:
+  - self-hosted
+  - Linux
+  - X64
+  - musa
+  - gpu-8
+
+# Container volumes (hardware-specific paths)
+container_volumes:
+  - /data:/data
+
+# Container options (no --privileged; explicit --device for MUSA GPUs)
+container_options: >-
+  --hostname sglang-plugin-fl
+  --ipc=host
+  --shm-size=64g
+  --device=/dev/mthreads_ctl
+  --device=/dev/mthreads0
+  --device=/dev/mthreads1
+  --device=/dev/mthreads2
+  --device=/dev/mthreads3
+  --device=/dev/mthreads4
+  --device=/dev/mthreads5
+  --device=/dev/mthreads6
+  --device=/dev/mthreads7
+  --cap-add=SYS_PTRACE
+  --security-opt seccomp=unconfined
