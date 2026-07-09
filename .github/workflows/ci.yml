@@ -40,7 +40,10 @@ jobs:
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'skip-security-audit')
     uses: ./.github/workflows/_security_audit.yml
-    secrets: inherit
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      SECURITY_AUDIT_MODEL: ${{ secrets.SECURITY_AUDIT_MODEL }}
 
   # ============================================================
   # Job 3: Build & install check
@@ -66,7 +69,7 @@ jobs:
     outputs:
       platforms: ${{ steps.detect.outputs.platforms }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           sparse-checkout: |
             .github/configs
@@ -85,7 +88,10 @@ jobs:
     uses: ./.github/workflows/_platform_test.yml
     with:
       platform: cuda
-    secrets: inherit
+    secrets:
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
 
   # ============================================================
   # Job 6b: Ascend platform testing
@@ -96,7 +102,10 @@ jobs:
     uses: ./.github/workflows/_platform_test.yml
     with:
       platform: ascend
-    secrets: inherit
+    secrets:
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
 
   # ============================================================
   # Job 6c: MUSA platform testing
@@ -107,4 +116,7 @@ jobs:
     uses: ./.github/workflows/_platform_test.yml
     with:
       platform: musa
-    secrets: inherit
+    secrets:
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}

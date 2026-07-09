@@ -38,4 +38,4 @@ container_options: >-
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver
   -v /usr/local/sbin:/usr/local/sbin
   -v /etc/ascend_install.info:/etc/ascend_install.info
-  -v /data:/data
+  -v /data/models:/data/models

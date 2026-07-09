@@ -25,4 +25,4 @@ container_options: >-
   --ulimit memlock=-1
   --ulimit stack=67108864
   --user root
-  -v /data:/data
+  -v /data/models:/data/models

@@ -32,4 +32,4 @@ container_options: >-
   --device=/dev/mthreads7
   --cap-add=SYS_PTRACE
   --security-opt seccomp=unconfined
-  -v /data:/data
+  -v /data/models:/data/models

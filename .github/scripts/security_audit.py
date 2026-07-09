@@ -94,6 +94,16 @@ BLOCK_RULES = [
         "file_filter": re.compile(r"\.github/workflows/.*\.ya?ml$"),
     },
     {
+        "id": "disable_security_audit",
+        "pattern": re.compile(
+            r"^\+.*(?:if:\s*false|if:\s*\$\{\{\s*false\s*\}\}|"
+            r"if:\s*always\(\)\s*&&\s*false|needs:.*\bskip\b)",
+            re.IGNORECASE,
+        ),
+        "message": "Security audit may be disabled via conditional — verify intent",
+        "file_filter": re.compile(r"\.github/workflows/.*\.ya?ml$"),
+    },
+    {
         "id": "reverse_shell_devtcp",
         "pattern": re.compile(r"^\+.*/dev/tcp/"),
         "message": "Possible reverse shell via /dev/tcp",
@@ -420,7 +430,7 @@ def _call_anthropic_api(diff_content: str) -> Optional[dict]:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             response_data = json.loads(resp.read().decode())
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         print(f"::warning::LLM audit: API call failed ({e})", file=sys.stderr)
