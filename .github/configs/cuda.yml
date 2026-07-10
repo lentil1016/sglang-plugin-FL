@@ -15,7 +15,6 @@ runner_labels:
 # and pip install needs write access to /usr/local. This matches org convention.
 container_options: >-
   --privileged
-  --gpus all
   --hostname sglang-plugin-fl
   --ipc=host
   --shm-size=64g
@@ -23,3 +22,5 @@ container_options: >-
   --ulimit stack=67108864
   --user root
   -v /data/models:/data/models
+  -e NVIDIA_VISIBLE_DEVICES=all
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility
