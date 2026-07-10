@@ -20,13 +20,11 @@
 #
 #   If any phase breaks, all subsequent phases fail too, forming a causal chain.
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 torch = pytest.importorskip("torch")
-
-from unittest.mock import patch, MagicMock
-
-import pytest
 
 
 class TestCudaCompatibleVendors:

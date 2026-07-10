@@ -6,17 +6,17 @@ from unittest.mock import patch
 
 import pytest
 
-_has_torch = importlib.util.find_spec("torch") is not None
-
-from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
-from sglang_fl.dispatch.registry import OpRegistry
-from sglang_fl.dispatch.manager import get_default_manager, reset_default_manager
 from sglang_fl.dispatch import call_op, resolve_op
+from sglang_fl.dispatch.manager import get_default_manager, reset_default_manager
 from sglang_fl.dispatch.policy import (
+    PREFER_VENDOR,
     reset_global_policy,
     with_preference,
-    PREFER_VENDOR,
 )
+from sglang_fl.dispatch.registry import OpRegistry
+from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
+
+_has_torch = importlib.util.find_spec("torch") is not None
 
 
 class TestCallOp:
@@ -96,9 +96,7 @@ class TestBuiltinOpsRegistration:
         assert "silu_and_mul" in ops
         assert "rms_norm" in ops
 
-    @pytest.mark.skipif(
-        not _has_torch, reason="reference backend requires torch"
-    )
+    @pytest.mark.skipif(not _has_torch, reason="reference backend requires torch")
     def test_register_builtins_has_reference_impls(self):
         from sglang_fl.dispatch.builtin_ops import register_builtins
 
