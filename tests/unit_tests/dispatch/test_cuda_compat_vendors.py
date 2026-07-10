@@ -20,6 +20,10 @@
 #
 #   If any phase breaks, all subsequent phases fail too, forming a causal chain.
 
+import pytest
+
+torch = pytest.importorskip("torch")
+
 from unittest.mock import patch, MagicMock
 
 import pytest

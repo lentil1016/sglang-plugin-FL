@@ -1,9 +1,12 @@
 # Tests for call_op / resolve_op high-level API and builtin_ops registration.
 
+import importlib
 import os
 from unittest.mock import patch
 
 import pytest
+
+_has_torch = importlib.util.find_spec("torch") is not None
 
 from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
 from sglang_fl.dispatch.registry import OpRegistry
@@ -93,6 +96,9 @@ class TestBuiltinOpsRegistration:
         assert "silu_and_mul" in ops
         assert "rms_norm" in ops
 
+    @pytest.mark.skipif(
+        not _has_torch, reason="reference backend requires torch"
+    )
     def test_register_builtins_has_reference_impls(self):
         from sglang_fl.dispatch.builtin_ops import register_builtins
 

@@ -124,6 +124,10 @@ class TestGlobalPolicyFunctions:
 
     def test_with_strict_mode(self):
         reset_global_policy()
+        # Set a non-strict baseline so we can verify the context manager effect
+        baseline = SelectionPolicy.from_dict(prefer=PREFER_DEFAULT, strict=False)
+        set_global_policy(baseline)
+        assert get_policy().strict is False
         with with_strict_mode():
             assert get_policy().strict is True
         assert get_policy().strict is False

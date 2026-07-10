@@ -1,0 +1,39 @@
+ARG BASE_IMAGE_VERSION=latest
+ARG BASE_IMAGE=harbor.baai.ac.cn/flagbase/flagbase-nvidia
+FROM ${BASE_IMAGE}:${BASE_IMAGE_VERSION}
+
+ARG SGLANG_VERSION=0.4.7
+ARG FLAGGEMS_VERSION=v5.0.0
+ARG FLAGCX_VERSION=v0.9.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /workspace
+
+# Install sglang
+RUN pip install --upgrade pip \
+    && pip install "sglang[all]==${SGLANG_VERSION}"
+
+# Install FlagGems
+RUN pip install scikit-build-core==0.11 pybind11 \
+    && git clone --branch ${FLAGGEMS_VERSION} --depth 1 https://github.com/flagos-ai/FlagGems /workspace/FlagGems \
+    && pip install --no-build-isolation /workspace/FlagGems
+
+# Install FlagCX (NVIDIA)
+RUN git clone --branch ${FLAGCX_VERSION} --depth 1 https://github.com/flagos-ai/FlagCX.git /workspace/FlagCX \
+    && cd /workspace/FlagCX \
+    && git submodule update --init --recursive \
+    && make USE_NVIDIA=1 \
+    && cd plugin/torch \
+    && FLAGCX_ADAPTOR=nvidia pip install --no-build-isolation .
+
+ENV FLAGCX_PATH=/workspace/FlagCX
+
+# Install test/dev tools
+RUN pip install \
+        pytest \
+        pytest-cov \
+        pytest-timeout \
+        pytest-json-report \
+        ruff \
+        pyyaml
