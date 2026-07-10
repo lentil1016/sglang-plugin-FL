@@ -14,6 +14,7 @@ runner_labels:
 # --user root is required: CI images install CUDA/NCCL libs under system paths,
 # and pip install needs write access to /usr/local. This matches org convention.
 container_options: >-
+  --privileged
   --gpus all
   --hostname sglang-plugin-fl
   --ipc=host
