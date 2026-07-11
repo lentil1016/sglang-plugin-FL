@@ -63,6 +63,10 @@ jobs:
     needs: setup
     runs-on: ${{ fromJson(needs.setup.outputs.config).runner_labels }}
     timeout-minutes: 60
+    env:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      NO_PROXY: ""
     container:
       image: ${{ fromJson(needs.setup.outputs.config).ci_image }}
       options: ${{ fromJson(needs.setup.outputs.config).container_options }}
