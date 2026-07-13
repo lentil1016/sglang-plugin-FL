@@ -10,7 +10,7 @@ on:
     branches:
       - main
     paths:
-      - "docker/**"
+      - "container/**"
   workflow_dispatch:
     inputs:
       push_images:
@@ -32,8 +32,32 @@ jobs:
             runson: 'h20'
             no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
             build-args: |
-              BASE_IMAGE=harbor.baai.ac.cn/flagbase/flagbase-nvidia
-              BASE_IMAGE_VERSION=latest
+              CUDA_VERSION=12.8.1
+              UBUNTU_VERSION=22.04
+
+          - job_name: build-sglang-plugin-fl-ascend-ci
+            push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
+            containerfile: 'ascend/containerfile'
+            image_name: 'sglang-plugin-fl'
+            tag: 'latest-ascend-ci'
+            runson: 'h20'
+            no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
+            build-args: |
+              CANN_VERSION=8.5.1
+              CANN_CHIP=a3
+              UBUNTU_VERSION=22.04
+              PYTHON_VERSION=3.11
+
+          - job_name: build-sglang-plugin-fl-musa-ci
+            push: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
+            containerfile: 'musa/containerfile'
+            image_name: 'sglang-plugin-fl'
+            tag: 'latest-musa-ci'
+            runson: 'h20'
+            no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.push_images }}
+            build-args: |
+              BASE_IMAGE=mthreads/musa
+              BASE_IMAGE_VERSION=rc4.3.6-devel-ubuntu22.04
 
     name: ${{ matrix.job_name }}
     uses: flagos-ai/build-infra/.github/workflows/imagebuild.yml@main
