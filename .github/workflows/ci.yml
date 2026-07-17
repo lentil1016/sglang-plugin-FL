@@ -83,9 +83,10 @@ jobs:
           sparse-checkout: |
             .github/configs
             .github/scripts
-      - name: Install PyYAML
-        run: pip install pyyaml
-      - id: detect
+      - name: Install CI script dependencies
+        run: pip install -r .github/scripts/requirements-ci.txt
+      - name: Detect available platforms
+        id: detect
         run: python3 .github/scripts/detect_platforms.py
 
   # ============================================================

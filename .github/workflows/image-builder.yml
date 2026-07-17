@@ -4,6 +4,8 @@ permissions:
   contents: read
   security-events: write
 
+# NOTE: This workflow is manual-only (workflow_dispatch), so secrets are always
+# available. It will never run in PR context where secrets would be restricted.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +16,7 @@ on:
 
 env:
   REGISTRY: harbor.baai.ac.cn
-  IMAGE_PREFIX: flagos-dev
+  REPO_NAME: flagos-dev
   IMAGE_NAME: sglang-plugin-fl
 
 jobs:
@@ -31,22 +33,13 @@ jobs:
           git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
-      - name: Configure Docker daemon proxy
-        run: |
-          sudo mkdir -p /etc/systemd/system/docker.service.d
-          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
-            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
-            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
-          sudo systemctl daemon-reload
-          sudo systemctl restart docker
-
       - name: Log in to registry
         run: |
           echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - name: Build image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-cuda-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-cuda-ci"
 
           docker build \
             --platform linux/amd64 \
@@ -64,7 +57,7 @@ jobs:
       - name: Push image
         if: ${{ inputs.push_images }}
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-cuda-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-cuda-ci"
           docker push "$IMAGE"
 
   build-ascend:
@@ -80,22 +73,13 @@ jobs:
           git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
-      - name: Configure Docker daemon proxy
-        run: |
-          sudo mkdir -p /etc/systemd/system/docker.service.d
-          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
-            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
-            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
-          sudo systemctl daemon-reload
-          sudo systemctl restart docker
-
       - name: Log in to registry
         run: |
           echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - name: Build image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-ascend-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-ascend-ci"
 
           docker build \
             --platform linux/amd64 \
@@ -115,7 +99,7 @@ jobs:
       - name: Push image
         if: ${{ inputs.push_images }}
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-ascend-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-ascend-ci"
           docker push "$IMAGE"
 
   build-musa:
@@ -131,22 +115,13 @@ jobs:
           git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
-      - name: Configure Docker daemon proxy
-        run: |
-          sudo mkdir -p /etc/systemd/system/docker.service.d
-          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
-            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
-            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
-          sudo systemctl daemon-reload
-          sudo systemctl restart docker
-
       - name: Log in to registry
         run: |
           echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - name: Build image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-musa-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-musa-ci"
 
           docker build \
             --platform linux/amd64 \
@@ -164,7 +139,7 @@ jobs:
       - name: Push image
         if: ${{ inputs.push_images }}
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-musa-ci"
+          IMAGE="${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:0.1.0-musa-ci"
           docker push "$IMAGE"
 
   trivy-scan:
@@ -180,9 +155,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - tag: latest-cuda-ci
-          - tag: latest-ascend-ci
-          - tag: latest-musa-ci
+          - tag: 0.1.0-cuda-ci
+          - tag: 0.1.0-ascend-ci
+          - tag: 0.1.0-musa-ci
     steps:
       - name: Log in to registry
         uses: docker/login-action@v3

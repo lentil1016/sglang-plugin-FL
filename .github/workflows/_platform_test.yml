@@ -58,8 +58,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install PyYAML
-        run: pip install pyyaml
+      - name: Install CI script dependencies
+        run: pip install -r .github/scripts/requirements-ci.txt
       - id: load
         run: python .github/scripts/load_config.py --platform ${{ inputs.platform }}
       - id: changes
