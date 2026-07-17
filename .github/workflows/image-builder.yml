@@ -5,19 +5,12 @@ permissions:
   security-events: write
 
 on:
-  schedule:
-    - cron: '0 4 * * *'
-  push:
-    branches:
-      - main
-    paths:
-      - "docker/**"
   workflow_dispatch:
     inputs:
       push_images:
         description: 'Push image to registry'
         type: boolean
-        default: false
+        default: true
 
 env:
   REGISTRY: harbor.baai.ac.cn
@@ -69,7 +62,7 @@ jobs:
             .
 
       - name: Push image
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        if: ${{ inputs.push_images }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-cuda-ci"
           docker push "$IMAGE"
@@ -120,7 +113,7 @@ jobs:
             .
 
       - name: Push image
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        if: ${{ inputs.push_images }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-ascend-ci"
           docker push "$IMAGE"
@@ -169,7 +162,7 @@ jobs:
             .
 
       - name: Push image
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        if: ${{ inputs.push_images }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-musa-ci"
           docker push "$IMAGE"
