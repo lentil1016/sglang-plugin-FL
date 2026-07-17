@@ -1,0 +1,223 @@
+name: image-builder
+
+permissions:
+  contents: read
+  security-events: write
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - "docker/**"
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: 'Push image to registry'
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: harbor.baai.ac.cn
+  IMAGE_PREFIX: flagos-dev
+  IMAGE_NAME: sglang-plugin-fl
+
+jobs:
+  build-cuda:
+    name: build-sglang-plugin-fl-cuda-ci
+    runs-on: build-image
+    env:
+      HTTP_PROXY: ${{ secrets.PROXY_HTTP }}
+      HTTPS_PROXY: ${{ secrets.PROXY_HTTPS }}
+      NO_PROXY: "localhost,127.0.0.1"
+    steps:
+      - name: Checkout Code
+        run: |
+          git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: Configure Docker daemon proxy
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
+            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
+            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-cuda-ci"
+
+          docker build \
+            --platform linux/amd64 \
+            --network=host \
+            --file docker/cuda/containerfile \
+            --tag "$IMAGE" \
+            --build-arg CUDA_VERSION=12.8.1 \
+            --build-arg UBUNTU_VERSION=22.04 \
+            --build-arg http_proxy=${{ secrets.PROXY_HTTP }} \
+            --build-arg https_proxy=${{ secrets.PROXY_HTTPS }} \
+            --build-arg no_proxy="localhost,127.0.0.1" \
+            --no-cache \
+            .
+
+      - name: Push image
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-cuda-ci"
+          docker push "$IMAGE"
+
+  build-ascend:
+    name: build-sglang-plugin-fl-ascend-ci
+    runs-on: build-image
+    env:
+      HTTP_PROXY: ${{ secrets.PROXY_HTTP }}
+      HTTPS_PROXY: ${{ secrets.PROXY_HTTPS }}
+      NO_PROXY: "localhost,127.0.0.1"
+    steps:
+      - name: Checkout Code
+        run: |
+          git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: Configure Docker daemon proxy
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
+            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
+            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-ascend-ci"
+
+          docker build \
+            --platform linux/amd64 \
+            --network=host \
+            --file docker/ascend/containerfile \
+            --tag "$IMAGE" \
+            --build-arg CANN_VERSION=8.5.1 \
+            --build-arg CANN_CHIP=a3 \
+            --build-arg UBUNTU_VERSION=22.04 \
+            --build-arg PYTHON_VERSION=3.11 \
+            --build-arg http_proxy=${{ secrets.PROXY_HTTP }} \
+            --build-arg https_proxy=${{ secrets.PROXY_HTTPS }} \
+            --build-arg no_proxy="localhost,127.0.0.1" \
+            --no-cache \
+            .
+
+      - name: Push image
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-ascend-ci"
+          docker push "$IMAGE"
+
+  build-musa:
+    name: build-sglang-plugin-fl-musa-ci
+    runs-on: build-image
+    env:
+      HTTP_PROXY: ${{ secrets.PROXY_HTTP }}
+      HTTPS_PROXY: ${{ secrets.PROXY_HTTPS }}
+      NO_PROXY: "localhost,127.0.0.1"
+    steps:
+      - name: Checkout Code
+        run: |
+          git clone --recurse-submodules https://github.com/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: Configure Docker daemon proxy
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment="HTTP_PROXY=%s"\nEnvironment="HTTPS_PROXY=%s"\nEnvironment="NO_PROXY=localhost,127.0.0.1"\n' \
+            "${{ secrets.PROXY_HTTP }}" "${{ secrets.PROXY_HTTPS }}" \
+            | sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.CONTAINER_REGISTRY }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-musa-ci"
+
+          docker build \
+            --platform linux/amd64 \
+            --network=host \
+            --file docker/musa/containerfile \
+            --tag "$IMAGE" \
+            --build-arg BASE_IMAGE=harbor.baai.ac.cn/flagos-dev/cache \
+            --build-arg BASE_IMAGE_VERSION=musa-rc4.3.0-devel-ubuntu22.04-amd64 \
+            --build-arg http_proxy=${{ secrets.PROXY_HTTP }} \
+            --build-arg https_proxy=${{ secrets.PROXY_HTTPS }} \
+            --build-arg no_proxy="localhost,127.0.0.1" \
+            --no-cache \
+            .
+
+      - name: Push image
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ env.IMAGE_NAME }}:latest-musa-ci"
+          docker push "$IMAGE"
+
+  trivy-scan:
+    name: "Trivy Scan (${{ matrix.tag }})"
+    needs: [build-cuda, build-ascend, build-musa]
+    if: >-
+      always() &&
+      (needs.build-cuda.result == 'success' ||
+       needs.build-ascend.result == 'success' ||
+       needs.build-musa.result == 'success')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: latest-cuda-ci
+          - tag: latest-ascend-ci
+          - tag: latest-musa-ci
+    steps:
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: harbor.baai.ac.cn
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.CONTAINER_REGISTRY }}
+
+      - name: Pull image
+        id: pull
+        run: |
+          docker pull harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:${{ matrix.tag }} && \
+            echo "pulled=true" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Run Trivy vulnerability scanner
+        if: steps.pull.outputs.pulled == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:${{ matrix.tag }}'
+          format: 'sarif'
+          output: 'trivy-${{ matrix.tag }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '15m'
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: steps.pull.outputs.pulled == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-${{ matrix.tag }}.sarif'
+          category: 'trivy-${{ matrix.tag }}'

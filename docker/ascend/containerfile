@@ -1,0 +1,82 @@
+# CI image for sglang-plugin-FL on Huawei Ascend NPU
+# Base: quay.io/ascend/cann (official CANN toolkit image)
+#
+# Build:
+#   docker build -t sglang-plugin-fl:latest-ascend-ci \
+#     -f container/ascend/containerfile .
+#
+# Push target: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-ascend-ci
+
+ARG CANN_VERSION=8.5.1
+ARG CANN_CHIP=a3
+ARG UBUNTU_VERSION=22.04
+ARG PYTHON_VERSION=3.11
+
+FROM harbor.baai.ac.cn/flagos-dev/cache:cann-${CANN_VERSION}-${CANN_CHIP}-ubuntu${UBUNTU_VERSION}-py${PYTHON_VERSION} AS base
+
+ARG SGLANG_VERSION=0.4.7
+ARG FLAGGEMS_VERSION=v5.0.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        curl \
+        wget \
+        vim \
+        cmake \
+        ninja-build \
+        libibverbs-dev \
+        libnuma-dev \
+        numactl \
+        libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel cmake
+
+# Install triton-ascend (required by FlagGems NPU backend)
+RUN pip install --no-cache-dir triton-ascend==3.2.0
+
+# jemalloc preload for better memory allocation
+RUN echo "export LD_PRELOAD=/usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2:\${LD_PRELOAD}" >> ~/.bashrc
+
+WORKDIR /workspace
+
+# ---------- ci stage ----------
+FROM base AS ci
+
+ARG SGLANG_VERSION=0.4.7
+ARG FLAGGEMS_VERSION=v5.0.0
+
+# Install sglang runtime (avoid pulling cuda triton)
+RUN VLLM_TARGET_DEVICE="empty" pip install --no-cache-dir \
+        "sglang[runtime]==${SGLANG_VERSION}" \
+        --extra-index-url https://download.pytorch.org/whl/cpu/ && \
+    pip uninstall -y triton 2>/dev/null || true && \
+    pip cache purge
+
+# Install FlagGems (NPU backend)
+RUN pip install --no-cache-dir -U scikit-build-core==0.11 pybind11 && \
+    git clone --branch ${FLAGGEMS_VERSION} --depth 1 \
+        https://github.com/flagos-ai/FlagGems /tmp/FlagGems && \
+    pip install --no-build-isolation \
+        --config-settings=cmake.define.FLAGGEMS_BACKEND=NPU \
+        /tmp/FlagGems && \
+    rm -rf /tmp/FlagGems
+
+# Test and dev tools
+RUN pip install --no-cache-dir \
+        pytest \
+        pytest-cov \
+        pytest-timeout \
+        pytest-json-report \
+        pytest-metadata \
+        numpy \
+        requests \
+        ruff \
+        pyyaml
+
+WORKDIR /workspace

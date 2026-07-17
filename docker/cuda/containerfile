@@ -1,0 +1,68 @@
+ARG CUDA_VERSION=12.8.1
+ARG UBUNTU_VERSION=22.04
+
+FROM harbor.baai.ac.cn/flagos-dev/cache:cuda-${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
+
+ARG PYTHON_VERSION=3.12
+ARG SGLANG_VERSION=0.5.11
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System dependencies + Python + CUDA nvrtc
+# NOTE: cuda-nvrtc-13-0 provides the CUDA 13.0 runtime compiler library required
+# by PyTorch 2.11 (built against CUDA 13.0). The base image remains CUDA 12.8.1
+# for driver compatibility; these two versions coexist by design.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        curl \
+        ca-certificates \
+        vim \
+        wget \
+        python3-pip \
+        libibverbs-dev \
+        libnuma-dev \
+        software-properties-common \
+        cuda-nvrtc-13-0 \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-dev \
+        python${PYTHON_VERSION}-venv \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1 \
+    && echo "/usr/local/cuda-13.0/targets/x86_64-linux/lib" > /etc/ld.so.conf.d/cuda-13.conf \
+    && ldconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+
+# Install PyTorch (CUDA 13.0 — required by sglang >=0.5.11)
+RUN pip install --no-cache-dir --timeout=600 --retries=3 \
+        torch==2.11.0 \
+        torchvision==0.26.0 \
+        torchaudio==2.11.0 \
+        --index-url https://download.pytorch.org/whl/cu130
+
+# Install sglang, FlagGems, and all pinned dependencies
+RUN pip install --no-cache-dir \
+        "sglang[runtime]==${SGLANG_VERSION}" \
+        "sglang-kernel==0.4.2" \
+        "flashinfer-python==0.6.8.post1" \
+        "flashinfer-cubin==0.6.8.post1" \
+        "nvidia-cutlass-dsl==4.4.2" \
+        "transformers==5.6.0" \
+        "huggingface_hub==1.23.0" \
+        "xgrammar==0.1.32" \
+        "scipy==1.13.1" \
+        "flag-gems==5.0.0" \
+        pytest \
+        pytest-cov \
+        pytest-timeout \
+        pytest-json-report \
+        ruff \
+        pyyaml \
+    && pip install --no-cache-dir --no-deps "kernels==0.3.3" \
+    && pip uninstall -y torchcodec 2>/dev/null || true
+
+WORKDIR /workspace
