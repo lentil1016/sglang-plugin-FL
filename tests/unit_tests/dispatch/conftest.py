@@ -1,6 +1,5 @@
 # Shared fixtures for dispatch unit tests.
 
-import logging
 
 import pytest
 
@@ -43,7 +42,8 @@ def make_impl():
         priority=BackendPriority.DEFAULT,
     ):
         if fn is None:
-            fn = lambda *a, **kw: f"result_from_{impl_id}"
+            def fn(*a, **kw):
+                return f"result_from_{impl_id}"
         return OpImpl(
             op_name=op_name,
             impl_id=impl_id,

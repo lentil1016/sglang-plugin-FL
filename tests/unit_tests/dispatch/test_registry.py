@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
-from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
+from sglang_fl.dispatch.types import BackendImplKind
 from sglang_fl.dispatch.registry import OpRegistry
 
 

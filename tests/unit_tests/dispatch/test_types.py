@@ -36,7 +36,7 @@ class TestBackendPriority:
 
 class TestOpImpl:
     def test_create_default_impl(self):
-        fn = lambda x: x
+        def fn(x): return x
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -51,7 +51,7 @@ class TestOpImpl:
         assert impl.priority == BackendPriority.DEFAULT
 
     def test_create_vendor_impl_requires_vendor_name(self):
-        fn = lambda x: x
+        def fn(x): return x
         with pytest.raises(ValueError, match="must specify vendor name"):
             OpImpl(
                 op_name="silu_and_mul",
@@ -61,7 +61,7 @@ class TestOpImpl:
             )
 
     def test_create_vendor_impl_with_vendor_name(self):
-        fn = lambda x: x
+        def fn(x): return x
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="vendor.cuda",
@@ -74,7 +74,7 @@ class TestOpImpl:
         assert impl.kind == BackendImplKind.VENDOR
 
     def test_is_available_default_true(self):
-        fn = lambda x: x
+        def fn(x): return x
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -120,7 +120,7 @@ class TestOpImpl:
         assert impl.is_available() is False
 
     def test_frozen_dataclass(self):
-        fn = lambda x: x
+        def fn(x): return x
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -131,7 +131,7 @@ class TestOpImpl:
             impl.op_name = "new_name"
 
     def test_supported_dtypes(self):
-        fn = lambda x: x
+        def fn(x): return x
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",

@@ -32,8 +32,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TESTS_DIR = _REPO_ROOT / "tests"
 sys.path.insert(0, str(_REPO_ROOT))
 
-from tests.utils.model_config import ModelConfig
-from tests.utils.platform_config import PlatformConfig
+from tests.utils.model_config import ModelConfig  # noqa: E402
+from tests.utils.platform_config import PlatformConfig  # noqa: E402
 
 
 def load_structured_config(path: Path) -> dict[str, Any]:

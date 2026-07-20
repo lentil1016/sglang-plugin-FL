@@ -1,8 +1,6 @@
 # Tests for OpManager: resolution, caching, fallback, fork safety.
 
 import os
-import threading
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,15 +8,10 @@ from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
 from sglang_fl.dispatch.registry import OpRegistry
 from sglang_fl.dispatch.manager import OpManager, get_default_manager, reset_default_manager
 from sglang_fl.dispatch.policy import (
-    SelectionPolicy,
-    get_policy,
-    policy_context,
     reset_global_policy,
-    set_global_policy,
     with_denied_vendors,
     with_preference,
     with_strict_mode,
-    PREFER_DEFAULT,
     PREFER_VENDOR,
     PREFER_REFERENCE,
 )

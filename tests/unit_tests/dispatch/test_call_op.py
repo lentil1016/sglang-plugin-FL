@@ -1,13 +1,13 @@
 # Tests for call_op / resolve_op high-level API and builtin_ops registration.
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from sglang_fl.dispatch.types import BackendImplKind, BackendPriority, OpImpl
 from sglang_fl.dispatch.registry import OpRegistry
-from sglang_fl.dispatch.manager import OpManager, get_default_manager, reset_default_manager
+from sglang_fl.dispatch.manager import get_default_manager, reset_default_manager
 from sglang_fl.dispatch import call_op, resolve_op
 from sglang_fl.dispatch.policy import (
     reset_global_policy,

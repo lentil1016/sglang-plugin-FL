@@ -3,15 +3,12 @@
 import os
 from unittest.mock import patch
 
-import pytest
 
 from sglang_fl.dispatch.policy import (
     PREFER_DEFAULT,
     PREFER_REFERENCE,
     PREFER_VENDOR,
     PolicyManager,
-    SelectionPolicy,
-    reset_global_policy,
 )
 
 
