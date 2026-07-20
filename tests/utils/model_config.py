@@ -36,7 +36,9 @@ class GenerateConfig:
     assets: list[str] = field(default_factory=list)
     sampling: dict[str, Any] = field(default_factory=dict)
     vl: dict[str, Any] = field(default_factory=dict)
-    parametrize: dict[str, list[Any]] | list[dict[str, Any]] = field(default_factory=dict)
+    parametrize: dict[str, list[Any]] | list[dict[str, Any]] = field(
+        default_factory=dict
+    )
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "GenerateConfig":
@@ -96,6 +98,7 @@ class ServeConfig:
             embedding_input=raw.get("embedding_input", ""),
         )
 
+
 @dataclass
 class ConcurrentConfig:
     modes: list[str] = field(default_factory=list)
@@ -117,6 +120,7 @@ class ConcurrentConfig:
             vl_sampling=sampling.get("vl", {}),
         )
 
+
 @dataclass
 class ModelConfig:
     model: str
@@ -133,7 +137,11 @@ class ModelConfig:
         models_dir: Path | None = None,
     ) -> "ModelConfig":
         models_dir = models_dir or _MODELS_DIR
-        path = models_dir / model / f"{case}.yaml" if case else models_dir / f"{model}.yaml"
+        path = (
+            models_dir / model / f"{case}.yaml"
+            if case
+            else models_dir / f"{model}.yaml"
+        )
         if not path.exists():
             raise FileNotFoundError(f"Model config not found: {path}")
         return cls.from_dict(_load_structured(path))
@@ -195,7 +203,3 @@ class ModelConfig:
             else:
                 args.extend([flag, str(value)])
         return args
-
-
-
-

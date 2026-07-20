@@ -730,6 +730,7 @@ def is_plugin_loaded() -> bool:
     """Return whether SGLang invoked the general plugin entry point."""
     return _plugin_loaded
 
+
 def is_plugin_active() -> bool:
     """Return whether the general plugin completed its initialization."""
     return _plugin_active

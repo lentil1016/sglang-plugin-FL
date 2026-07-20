@@ -43,7 +43,7 @@ def gemma_rms_norm_ascend(
     x: torch.Tensor,
     residual: Optional[torch.Tensor] = None,
 ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-    
+
     import torch_npu
     from sgl_kernel_npu.norm.add_rmsnorm_bias import add_gemma_rms_norm
 

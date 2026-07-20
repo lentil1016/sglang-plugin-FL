@@ -18,7 +18,7 @@ from tests.e2e_tests.serving.server_helper import SGLangServer
 @pytest.mark.benchmark
 def test_benchmark_serve(tmp_path):
     case = load_benchmark_case()
-    
+
     server_params = dict(case.get("server_parameters", {}))
     client_params = dict(case.get("client_parameters", {}))
 
@@ -27,7 +27,9 @@ def test_benchmark_serve(tmp_path):
     client_params.setdefault("model", served_model_name)
     client_params.setdefault("served_model_name", served_model_name)
     client_params.setdefault("tokenizer", model_path)
-    tp_size = int(server_params.pop("tp_size", server_params.pop("tensor_parallel_size", 1)))
+    tp_size = int(
+        server_params.pop("tp_size", server_params.pop("tensor_parallel_size", 1))
+    )
     host = server_params.pop("host", "127.0.0.1")
     port = int(server_params.pop("port", 0) or 0)
     server_extra_args = to_cli_args(server_params)
@@ -66,5 +68,3 @@ def test_benchmark_serve(tmp_path):
         assert data.get("completed", 0) == expected
     errors = [err for err in data.get("errors", []) if err]
     assert not errors
-
-

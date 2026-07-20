@@ -49,7 +49,9 @@ class TestFilter:
 class FunctionalTests:
     tests: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
-    def get_cases(self, task: str | None = None, model: str | None = None) -> list[dict[str, str]]:
+    def get_cases(
+        self, task: str | None = None, model: str | None = None
+    ) -> list[dict[str, str]]:
         cases: list[dict[str, str]] = []
         for task_name, models in self.tests.items():
             if task and task_name != task:
@@ -118,7 +120,9 @@ class PlatformConfig:
 
     def get_unit_filter(self) -> TestFilter:
         raw = self._tests_section("unit")
-        return TestFilter(include=raw.get("include", "*"), exclude=raw.get("exclude", []))
+        return TestFilter(
+            include=raw.get("include", "*"), exclude=raw.get("exclude", [])
+        )
 
     def get_e2e_tests(self) -> FunctionalTests:
         raw = self._tests_section("e2e")
@@ -126,12 +130,16 @@ class PlatformConfig:
 
     def get_functional_filter(self) -> TestFilter:
         raw = self._tests_section("functional")
-        return TestFilter(include=raw.get("include", "*"), exclude=raw.get("exclude", []))
+        return TestFilter(
+            include=raw.get("include", "*"), exclude=raw.get("exclude", [])
+        )
 
     def get_benchmark_tests(self) -> dict[str, Any]:
         return self._tests_section("benchmark")
 
-    def get_tolerance(self, category: str = "inference", dtype: str = "default") -> Tolerance:
+    def get_tolerance(
+        self, category: str = "inference", dtype: str = "default"
+    ) -> Tolerance:
         device_override = self.device_overrides.get(self.device, {})
         if isinstance(device_override, dict):
             device_tolerance = device_override.get("tolerance", {}).get(category, {})
@@ -152,7 +160,9 @@ class PlatformConfig:
         return any(token in model_name for token in self.unsupported_features)
 
     def _tests_section(self, name: str) -> dict[str, Any]:
-        return self.device_tests.get(self.device, {}).get("tests", {}).get(name, {}) or {}
+        return (
+            self.device_tests.get(self.device, {}).get("tests", {}).get(name, {}) or {}
+        )
 
 
 def _resolve_platform_file(platform: str, platforms_dir: Path) -> Path:
@@ -170,6 +180,6 @@ def _resolve_platform_file(platform: str, platforms_dir: Path) -> Path:
             return candidate
 
     available = ", ".join(sorted(p.stem for p in platforms_dir.glob("*.yaml")))
-    raise FileNotFoundError(f"Platform config not found for {platform}. Available: {available}")
-
-
+    raise FileNotFoundError(
+        f"Platform config not found for {platform}. Available: {available}"
+    )

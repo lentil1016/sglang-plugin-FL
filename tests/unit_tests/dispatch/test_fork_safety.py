@@ -21,13 +21,15 @@ def manager_with_cache():
     def impl_fn(*a, **kw):
         return "parent_result"
 
-    registry.register_impl(OpImpl(
-        op_name="test_op",
-        impl_id="default.flagos",
-        kind=BackendImplKind.DEFAULT,
-        fn=impl_fn,
-        priority=BackendPriority.DEFAULT,
-    ))
+    registry.register_impl(
+        OpImpl(
+            op_name="test_op",
+            impl_id="default.flagos",
+            kind=BackendImplKind.DEFAULT,
+            fn=impl_fn,
+            priority=BackendPriority.DEFAULT,
+        )
+    )
 
     # Warm the cache
     fn = manager.resolve("test_op")
@@ -40,9 +42,7 @@ def manager_with_cache():
 class TestForkSafety:
     """Test that OpManager correctly resets state after fork."""
 
-    @pytest.mark.skipif(
-        sys.platform == "win32", reason="fork not available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_fork_clears_cache(self, manager_with_cache):
         """After fork, child process should have empty cache."""
         manager = manager_with_cache
@@ -82,9 +82,7 @@ class TestForkSafety:
             assert not_initialized == "1", "Should be uninitialized after fork"
             assert pid_reset == "1", "init_pid should be -1 after fork"
 
-    @pytest.mark.skipif(
-        sys.platform == "win32", reason="fork not available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_fork_child_reinitializes_on_resolve(self, manager_with_cache):
         """After fork, child should re-initialize when resolve is called."""
         manager = manager_with_cache
@@ -121,11 +119,11 @@ class TestForkSafety:
             assert not data.startswith("ERROR"), f"Child error: {data}"
             old_pid, new_pid, child_pid = data.split(",")
             assert old_pid == "-1", "After fork, init_pid should be -1"
-            assert new_pid == child_pid, "After ensure_initialized, pid should match child"
+            assert new_pid == child_pid, (
+                "After ensure_initialized, pid should match child"
+            )
 
-    @pytest.mark.skipif(
-        sys.platform == "win32", reason="fork not available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_fork_parent_unaffected(self, manager_with_cache):
         """Fork should not affect parent process state."""
         manager = manager_with_cache
@@ -144,9 +142,7 @@ class TestForkSafety:
         assert manager._state.initialized is True
         assert manager._state.init_pid == os.getpid()
 
-    @pytest.mark.skipif(
-        sys.platform == "win32", reason="fork not available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_fork_epoch_increments(self, manager_with_cache):
         """After fork, policy epoch should increment in child."""
         manager = manager_with_cache

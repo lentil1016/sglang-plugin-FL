@@ -27,7 +27,9 @@ _ATOL = 1e-3
 _HALF_TOL = 2e-2
 
 
-def _allclose(actual: torch.Tensor, expected: torch.Tensor, *, dtype: torch.dtype) -> bool:
+def _allclose(
+    actual: torch.Tensor, expected: torch.Tensor, *, dtype: torch.dtype
+) -> bool:
     tol = _HALF_TOL if dtype in (torch.float16, torch.bfloat16) else _ATOL
     return torch.allclose(actual.float(), expected.float(), rtol=tol, atol=tol)
 
@@ -62,7 +64,9 @@ def _skip_optional_kernel(exc: Exception, op_name: str) -> None:
     pytest.skip(f"{op_name} kernel unavailable in this environment: {exc}")
 
 
-def _assert_tensor_finite(tensor: torch.Tensor, shape: tuple[int, ...] | None = None) -> None:
+def _assert_tensor_finite(
+    tensor: torch.Tensor, shape: tuple[int, ...] | None = None
+) -> None:
     if shape is not None:
         assert tensor.shape == shape
     assert torch.isfinite(tensor.float()).all()
@@ -73,7 +77,9 @@ def _rms_reference(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.T
     return (x.float() * torch.rsqrt(variance + eps) * weight.float()).to(x.dtype)
 
 
-def _rotary_cache(max_position: int, rotary_dim: int, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
+def _rotary_cache(
+    max_position: int, rotary_dim: int, device, dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
     inv_freq = 1.0 / (
         10000.0 ** (torch.arange(0, rotary_dim, 2, device=device).float() / rotary_dim)
     )
@@ -141,7 +147,9 @@ def test_gemma_rms_norm_correctness(device) -> None:
         weight = torch.randn(128, device=device, dtype=dtype)
         obj = SimpleNamespace(weight=weight, variance_epsilon=eps)
         variance = x.float().pow(2).mean(-1, keepdim=True)
-        expected = (x.float() * torch.rsqrt(variance + eps) * (1.0 + weight.float())).to(dtype)
+        expected = (
+            x.float() * torch.rsqrt(variance + eps) * (1.0 + weight.float())
+        ).to(dtype)
         try:
             actual = _call_selected("gemma_rms_norm", obj, x)
         except RuntimeError as exc:
@@ -163,10 +171,26 @@ def test_rotary_embedding_correctness(device) -> None:
 
     try:
         expected_q, expected_k = _call_reference(
-            "rotary_embedding", None, q.clone(), k.clone(), cos, sin, positions, False, False
+            "rotary_embedding",
+            None,
+            q.clone(),
+            k.clone(),
+            cos,
+            sin,
+            positions,
+            False,
+            False,
         )
         actual_q, actual_k = _call_selected(
-            "rotary_embedding", None, q.clone(), k.clone(), cos, sin, positions, False, False
+            "rotary_embedding",
+            None,
+            q.clone(),
+            k.clone(),
+            cos,
+            sin,
+            positions,
+            False,
+            False,
         )
     except RuntimeError as exc:
         _maybe_skip_unavailable(exc, "rotary_embedding")
@@ -195,8 +219,12 @@ def test_mrotary_embedding_correctness(device) -> None:
     )
 
     try:
-        expected_q, expected_k = _call_reference("mrotary_embedding", obj, positions, q.clone(), k.clone())
-        actual_q, actual_k = _call_selected("mrotary_embedding", obj, positions, q.clone(), k.clone())
+        expected_q, expected_k = _call_reference(
+            "mrotary_embedding", obj, positions, q.clone(), k.clone()
+        )
+        actual_q, actual_k = _call_selected(
+            "mrotary_embedding", obj, positions, q.clone(), k.clone()
+        )
     except RuntimeError as exc:
         _maybe_skip_unavailable(exc, "mrotary_embedding")
 
@@ -214,8 +242,12 @@ def test_topk_output_contract(device) -> None:
         pytest.skip(f"SGLang TopKConfig unavailable: {exc}")
 
     num_tokens, hidden_size, num_experts, top_k = 16, 64, 8, 2
-    hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=torch.float16)
-    router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=torch.float32)
+    hidden_states = torch.randn(
+        num_tokens, hidden_size, device=device, dtype=torch.float16
+    )
+    router_logits = torch.randn(
+        num_tokens, num_experts, device=device, dtype=torch.float32
+    )
     topk_config = TopKConfig(top_k=top_k, renormalize=True)
     obj = SimpleNamespace(layer_id=0, topk_config=topk_config)
 
@@ -237,11 +269,14 @@ def test_topk_output_contract(device) -> None:
         atol=1e-3,
     )
 
+
 def test_fused_moe_output_contract(device) -> None:
     """Check fused_moe dispatches to a MoeRunner-compatible object."""
     try:
         from sglang.srt.layers.moe.token_dispatcher import StandardCombineInput
-        from sglang.srt.layers.moe.token_dispatcher.standard import StandardDispatchOutput
+        from sglang.srt.layers.moe.token_dispatcher.standard import (
+            StandardDispatchOutput,
+        )
         from sglang.srt.layers.moe.topk import StandardTopKOutput
     except Exception as exc:  # pragma: no cover - depends on installed SGLang
         pytest.skip(f"SGLang MoE dispatcher types unavailable: {exc}")
@@ -250,18 +285,28 @@ def test_fused_moe_output_contract(device) -> None:
         def run(self, dispatch_output, quant_info):
             assert quant_info.w13_weight is layer.w13_weight
             assert quant_info.w2_weight is layer.w2_weight
-            weights = dispatch_output.topk_output.topk_weights.to(dispatch_output.hidden_states.dtype)
+            weights = dispatch_output.topk_output.topk_weights.to(
+                dispatch_output.hidden_states.dtype
+            )
             scale = weights.sum(dim=-1, keepdim=True)
-            return StandardCombineInput(hidden_states=dispatch_output.hidden_states * scale)
+            return StandardCombineInput(
+                hidden_states=dispatch_output.hidden_states * scale
+            )
 
     num_tokens, hidden_size, num_experts, intermediate_size, top_k = 8, 16, 4, 32, 2
-    hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=torch.float16)
+    hidden_states = torch.randn(
+        num_tokens, hidden_size, device=device, dtype=torch.float16
+    )
     topk_weights = torch.softmax(
         torch.randn(num_tokens, top_k, device=device, dtype=torch.float32),
         dim=-1,
     )
-    topk_ids = torch.randint(0, num_experts, (num_tokens, top_k), device=device, dtype=torch.int32)
-    router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=torch.float32)
+    topk_ids = torch.randint(
+        0, num_experts, (num_tokens, top_k), device=device, dtype=torch.int32
+    )
+    router_logits = torch.randn(
+        num_tokens, num_experts, device=device, dtype=torch.float32
+    )
     topk_output = StandardTopKOutput(topk_weights, topk_ids, router_logits)
     dispatch_output = StandardDispatchOutput(hidden_states, None, topk_output)
     layer = SimpleNamespace(
@@ -293,11 +338,19 @@ def test_fused_moe_output_contract(device) -> None:
 
 def _make_fla_inputs(device, dtype: torch.dtype = torch.float16):
     batch, seq_len, num_heads, key_dim, value_dim = 1, 4, 2, 16, 16
-    q = torch.randn(batch, seq_len, num_heads, key_dim, device=device, dtype=dtype) * 0.1
+    q = (
+        torch.randn(batch, seq_len, num_heads, key_dim, device=device, dtype=dtype)
+        * 0.1
+    )
     k = torch.randn_like(q)
-    v = torch.randn(batch, seq_len, num_heads, value_dim, device=device, dtype=dtype) * 0.1
+    v = (
+        torch.randn(batch, seq_len, num_heads, value_dim, device=device, dtype=dtype)
+        * 0.1
+    )
     g = torch.randn(batch, seq_len, num_heads, device=device, dtype=dtype) * -0.1
-    beta = torch.sigmoid(torch.randn(batch, seq_len, num_heads, device=device, dtype=dtype))
+    beta = torch.sigmoid(
+        torch.randn(batch, seq_len, num_heads, device=device, dtype=dtype)
+    )
     scale = key_dim**-0.5
     return q, k, v, g, beta, scale
 
@@ -371,7 +424,9 @@ def test_fla_packed_decode_contract(device) -> None:
     b = torch.randn(batch, num_heads, device=device, dtype=dtype)
     A_log = torch.randn(num_heads, device=device, dtype=dtype)
     dt_bias = torch.randn(num_heads, device=device, dtype=dtype)
-    initial_state = torch.randn(batch, num_heads, key_dim, value_dim, device=device, dtype=dtype)
+    initial_state = torch.randn(
+        batch, num_heads, key_dim, value_dim, device=device, dtype=dtype
+    )
     out = torch.empty(batch, num_heads, value_dim, device=device, dtype=dtype)
     ssm_state_indices = torch.arange(batch, device=device, dtype=torch.int32)
 
@@ -390,12 +445,12 @@ def test_fla_packed_decode_contract(device) -> None:
         )
     except RuntimeError as exc:
         if "No available implementation" in str(exc):
-            _maybe_skip_unavailable(exc, "fused_recurrent_gated_delta_rule_packed_decode")
+            _maybe_skip_unavailable(
+                exc, "fused_recurrent_gated_delta_rule_packed_decode"
+            )
         _skip_optional_kernel(exc, "fused_recurrent_gated_delta_rule_packed_decode")
     except Exception as exc:
         _skip_optional_kernel(exc, "fused_recurrent_gated_delta_rule_packed_decode")
 
     _assert_tensor_finite(output)
     _assert_tensor_finite(final_state)
-
-

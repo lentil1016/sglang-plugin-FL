@@ -140,14 +140,10 @@ def load_changed_files(path: str) -> list[str]:
         return []
 
 
-def filter_e2e_by_changes(
-    matrix: list[dict], changed: list[str]
-) -> list[dict]:
+def filter_e2e_by_changes(matrix: list[dict], changed: list[str]) -> list[dict]:
     """Smart-skip: if only docs/CI/examples changed, skip e2e tests."""
     skip_prefixes = ("docs/", ".github/", "examples/", "README", "LICENSE")
-    if all(
-        any(f.startswith(prefix) for prefix in skip_prefixes) for f in changed
-    ):
+    if all(any(f.startswith(prefix) for prefix in skip_prefixes) for f in changed):
         print("::notice::Only docs/CI files changed — skipping e2e tests")
         return []
     return matrix

@@ -47,7 +47,9 @@ def test_import_flagcx_wrapper_requires_flagcx_path(monkeypatch) -> None:
 
     monkeypatch.delenv("FLAGCX_PATH", raising=False)
 
-    with pytest.raises(RuntimeError, match="FLAGCX_PATH environment variable is not set"):
+    with pytest.raises(
+        RuntimeError, match="FLAGCX_PATH environment variable is not set"
+    ):
         _import_flagcx_wrapper()
 
 
@@ -64,7 +66,9 @@ def test_world_size_one_disables_communicator(monkeypatch, tmp_path: Path) -> No
     from sglang_fl.distributed.device_communicators import flagcx as flagcx_mod
 
     monkeypatch.setenv("FLAGCX_PATH", str(tmp_path))
-    monkeypatch.setattr(flagcx_mod, "_import_flagcx_wrapper", lambda: _fake_wrapper_tuple())
+    monkeypatch.setattr(
+        flagcx_mod, "_import_flagcx_wrapper", lambda: _fake_wrapper_tuple()
+    )
     monkeypatch.setattr(flagcx_mod.dist, "get_rank", Mock(return_value=0))
     monkeypatch.setattr(flagcx_mod.dist, "get_world_size", Mock(return_value=1))
 

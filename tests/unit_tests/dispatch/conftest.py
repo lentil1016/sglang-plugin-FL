@@ -25,14 +25,17 @@ def registry():
 @pytest.fixture
 def dummy_fn():
     """A simple callable for use in OpImpl."""
+
     def _fn(*args, **kwargs):
         return "dummy_result"
+
     return _fn
 
 
 @pytest.fixture
 def make_impl():
     """Factory fixture for creating OpImpl instances."""
+
     def _make(
         op_name="test_op",
         impl_id="test.impl",
@@ -42,8 +45,10 @@ def make_impl():
         priority=BackendPriority.DEFAULT,
     ):
         if fn is None:
+
             def fn(*a, **kw):
                 return f"result_from_{impl_id}"
+
         return OpImpl(
             op_name=op_name,
             impl_id=impl_id,
@@ -52,4 +57,5 @@ def make_impl():
             vendor=vendor,
             priority=priority,
         )
+
     return _make

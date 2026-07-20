@@ -14,7 +14,7 @@ def mrotary_embedding_ascend(
     query: torch.Tensor,
     key: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    
+
     import torch_npu
 
     # npu_mrope has an internal size limit; fall back to pure-torch for large embeddings.

@@ -190,24 +190,28 @@ def test_flaggems_record_installs_aten_only_filter(
         )
         assert handler.filters
         filter_ = handler.filters[-1]
-        assert filter_.filter(logging.LogRecord(
-            "flag_gems.ops.add",
-            logging.INFO,
-            "",
-            0,
-            "",
-            (),
-            None,
-        ))
-        assert not filter_.filter(logging.LogRecord(
-            "flag_gems.modules.activation",
-            logging.INFO,
-            "",
-            0,
-            "",
-            (),
-            None,
-        ))
+        assert filter_.filter(
+            logging.LogRecord(
+                "flag_gems.ops.add",
+                logging.INFO,
+                "",
+                0,
+                "",
+                (),
+                None,
+            )
+        )
+        assert not filter_.filter(
+            logging.LogRecord(
+                "flag_gems.modules.activation",
+                logging.INFO,
+                "",
+                0,
+                "",
+                (),
+                None,
+            )
+        )
     finally:
         logger.handlers = old_handlers
 

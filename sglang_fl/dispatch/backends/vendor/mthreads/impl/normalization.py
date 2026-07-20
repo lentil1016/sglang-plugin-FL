@@ -28,6 +28,7 @@ def rms_norm_musa(
         x = x.contiguous()
     if residual is not None:
         from sgl_kernel import fused_add_rmsnorm
+
         fused_add_rmsnorm(x, residual, obj.weight.data, obj.variance_epsilon)
         return x, residual
     return torch.nn.functional.rms_norm(
@@ -41,6 +42,7 @@ def gemma_rms_norm_musa(
     residual: Optional[torch.Tensor] = None,
 ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     from sgl_kernel import gemma_fused_add_rmsnorm, gemma_rmsnorm
+
     if residual is not None:
         gemma_fused_add_rmsnorm(x, residual, obj.weight.data, obj.variance_epsilon)
         return x, residual

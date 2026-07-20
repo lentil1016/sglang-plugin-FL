@@ -123,19 +123,30 @@ class TestRunner:
             extra_args.extend(["--ignore", f"tests/unit_tests/{pattern}"])
         if unit_filter.include != "*" and isinstance(unit_filter.include, list):
             extra_args.extend(["-k", " or ".join(unit_filter.include)])
-        return [TestCase(name="unit", pytest_path="tests/unit_tests", task="unit", extra_args=extra_args)]
+        return [
+            TestCase(
+                name="unit",
+                pytest_path="tests/unit_tests",
+                task="unit",
+                extra_args=extra_args,
+            )
+        ]
 
     def _discover_e2e_tests(self) -> list[TestCase]:
         cases: list[TestCase] = []
 
         # Future-compatible structured e2e discovery.
-        for item in self.config.get_e2e_tests().get_cases(task=self.task, model=self.model):
+        for item in self.config.get_e2e_tests().get_cases(
+            task=self.task, model=self.model
+        ):
             model_name = item["model"]
             case_name = item["case"]
             if self.case and self.case != case_name:
                 continue
             if self.config.should_skip_model(model_name):
-                print(f"[run] Skipping e2e/{model_name}/{case_name} (unsupported feature)")
+                print(
+                    f"[run] Skipping e2e/{model_name}/{case_name} (unsupported feature)"
+                )
                 continue
             task = item["task"]
             test_path = f"tests/e2e_tests/{task}/test_{task}_smoke.py"
@@ -160,7 +171,9 @@ class TestRunner:
         extra_args = ["-v", "--tb=short", "-s"]
         for pattern in functional_filter.exclude:
             extra_args.extend(["--ignore", f"tests/functional_tests/{pattern}"])
-        if functional_filter.include != "*" and isinstance(functional_filter.include, list):
+        if functional_filter.include != "*" and isinstance(
+            functional_filter.include, list
+        ):
             extra_args.extend(["-k", " or ".join(functional_filter.include)])
 
         root = _REPO_ROOT / "tests" / "functional_tests"
@@ -175,6 +188,7 @@ class TestRunner:
                 extra_args=extra_args,
             )
         ]
+
     def _discover_benchmark_tests(self) -> list[TestCase]:
         benchmark_cfg = self.config.get_benchmark_tests()
         if not benchmark_cfg.get("enabled", False):
@@ -219,7 +233,9 @@ class TestRunner:
                 if self.case and self.case != case_name:
                     continue
                 if self.config.should_skip_model(model_name):
-                    print(f"[run] Skipping benchmark/{model_name}/{case_name} (unsupported feature)")
+                    print(
+                        f"[run] Skipping benchmark/{model_name}/{case_name} (unsupported feature)"
+                    )
                     continue
 
                 model_cfg = ModelConfig.load(model_name, case_name)
@@ -242,11 +258,17 @@ class TestRunner:
         return cases
 
     @staticmethod
-    def _inject_model_config(runtime_case: dict[str, Any], model_cfg: ModelConfig) -> None:
+    def _inject_model_config(
+        runtime_case: dict[str, Any], model_cfg: ModelConfig
+    ) -> None:
         if "parameters" in runtime_case:
-            runtime_case["parameters"] = model_cfg.benchmark_parameters(runtime_case.get("parameters", {}))
+            runtime_case["parameters"] = model_cfg.benchmark_parameters(
+                runtime_case.get("parameters", {})
+            )
         if "server_parameters" in runtime_case:
-            runtime_case["server_parameters"] = model_cfg.server_parameters(runtime_case.get("server_parameters", {}))
+            runtime_case["server_parameters"] = model_cfg.server_parameters(
+                runtime_case.get("server_parameters", {})
+            )
         if "client_parameters" in runtime_case:
             client_params = dict(runtime_case.get("client_parameters", {}))
             if model_cfg.serve.served_model_name:
@@ -271,14 +293,30 @@ class TestRunner:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--platform", required=True, help="Platform name or device alias, e.g. cuda/a100/ascend/910b")
-    parser.add_argument("--device", default=None, help="Device type within the platform, e.g. a100")
-    parser.add_argument("--scope", choices=["all", "unit", "e2e", "functional", "benchmark"], default="all")
-    parser.add_argument("--task", default=None, help="Task filter, e.g. inference/serving")
+    parser.add_argument(
+        "--platform",
+        required=True,
+        help="Platform name or device alias, e.g. cuda/a100/ascend/910b",
+    )
+    parser.add_argument(
+        "--device", default=None, help="Device type within the platform, e.g. a100"
+    )
+    parser.add_argument(
+        "--scope",
+        choices=["all", "unit", "e2e", "functional", "benchmark"],
+        default="all",
+    )
+    parser.add_argument(
+        "--task", default=None, help="Task filter, e.g. inference/serving"
+    )
     parser.add_argument("--model", default=None, help="Model family filter, e.g. qwen3")
     parser.add_argument("--case", default=None, help="Model case filter, e.g. 06b_tp1")
-    parser.add_argument("--benchmark", choices=["throughput", "latency", "serve"], default=None)
-    parser.add_argument("pytest_args", nargs=argparse.REMAINDER, help="Extra pytest args after '--'")
+    parser.add_argument(
+        "--benchmark", choices=["throughput", "latency", "serve"], default=None
+    )
+    parser.add_argument(
+        "pytest_args", nargs=argparse.REMAINDER, help="Extra pytest args after '--'"
+    )
     return parser.parse_args(argv)
 
 
@@ -303,6 +341,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-

@@ -230,10 +230,14 @@ def _percentile(values: list[float], p: float) -> float:
     index = (len(sorted_values) - 1) * p
     floor = int(index)
     ceil = min(floor + 1, len(sorted_values) - 1)
-    return sorted_values[floor] + (sorted_values[ceil] - sorted_values[floor]) * (index - floor)
+    return sorted_values[floor] + (sorted_values[ceil] - sorted_values[floor]) * (
+        index - floor
+    )
 
 
-def _report(label: str, n_req: int, elapsed: float, latencies: list[float], total_tokens: int) -> None:
+def _report(
+    label: str, n_req: int, elapsed: float, latencies: list[float], total_tokens: int
+) -> None:
     mean = statistics.fmean(latencies) if latencies else 0.0
     p50 = _percentile(latencies, 0.50)
     p99 = _percentile(latencies, 0.99)
@@ -289,7 +293,9 @@ def _run_text_concurrent(engine: Engine) -> list[tuple[str, str]]:
 
     async def one(prompt_text: str):
         start = time.perf_counter()
-        output = await engine.async_generate(prompt=prompt_text, sampling_params=_TEXT_SAMPLING)
+        output = await engine.async_generate(
+            prompt=prompt_text, sampling_params=_TEXT_SAMPLING
+        )
         return time.perf_counter() - start, output
 
     async def run():
@@ -305,7 +311,9 @@ def _run_text_concurrent(engine: Engine) -> list[tuple[str, str]]:
         print(f"  {label!r}\n    -> {_output_text(output)!r}")
 
     _report("text-concurrent", CONCURRENT_N, elapsed, latencies, total_tokens)
-    return [(label, _output_text(output)) for (label, _), (_, output) in zip(items, results)]
+    return [
+        (label, _output_text(output)) for (label, _), (_, output) in zip(items, results)
+    ]
 
 
 def _run_vl_concurrent(engine: Engine) -> list[tuple[dict[str, Any], str]]:
@@ -327,7 +335,9 @@ def _run_vl_concurrent(engine: Engine) -> list[tuple[dict[str, Any], str]]:
 
     async def run():
         start = time.perf_counter()
-        results = await asyncio.gather(*(one(prompt_text, uri) for _, prompt_text, uri in items))
+        results = await asyncio.gather(
+            *(one(prompt_text, uri) for _, prompt_text, uri in items)
+        )
         return time.perf_counter() - start, results
 
     elapsed, results = engine.loop.run_until_complete(run())
@@ -335,13 +345,20 @@ def _run_vl_concurrent(engine: Engine) -> list[tuple[dict[str, Any], str]]:
     total_tokens = sum(_completion_tokens(output) for _, output in results)
 
     for (case, _, _), (_, output) in zip(items[: min(len(items), len(base))], results):
-        print(f"  [{case['image']}] {case['question']}\n    -> {_output_text(output)!r}")
+        print(
+            f"  [{case['image']}] {case['question']}\n    -> {_output_text(output)!r}"
+        )
 
     _report("vl-concurrent", CONCURRENT_N, elapsed, latencies, total_tokens)
-    return [(case, _output_text(output)) for (case, _, _), (_, output) in zip(items, results)]
+    return [
+        (case, _output_text(output))
+        for (case, _, _), (_, output) in zip(items, results)
+    ]
 
 
-def _run_mixed_concurrent(engine: Engine) -> tuple[list[tuple[str, str]], list[tuple[dict[str, Any], str]]]:
+def _run_mixed_concurrent(
+    engine: Engine,
+) -> tuple[list[tuple[str, str]], list[tuple[dict[str, Any], str]]]:
     _check_images()
     n_text = CONCURRENT_N // 2
     n_vl = CONCURRENT_N - n_text
@@ -357,7 +374,9 @@ def _run_mixed_concurrent(engine: Engine) -> tuple[list[tuple[str, str]], list[t
 
     async def text_one(prompt_text: str):
         start = time.perf_counter()
-        output = await engine.async_generate(prompt=prompt_text, sampling_params=_TEXT_SAMPLING)
+        output = await engine.async_generate(
+            prompt=prompt_text, sampling_params=_TEXT_SAMPLING
+        )
         return time.perf_counter() - start, output
 
     async def vl_one(prompt_text: str, image_uri: str):
@@ -378,12 +397,22 @@ def _run_mixed_concurrent(engine: Engine) -> tuple[list[tuple[str, str]], list[t
         return time.perf_counter() - start, outputs[:n_text], outputs[n_text:]
 
     elapsed, text_results, vl_results = engine.loop.run_until_complete(run())
-    latencies = [latency for latency, _ in text_results] + [latency for latency, _ in vl_results]
-    total_tokens = sum(_completion_tokens(output) for _, output in [*text_results, *vl_results])
+    latencies = [latency for latency, _ in text_results] + [
+        latency for latency, _ in vl_results
+    ]
+    total_tokens = sum(
+        _completion_tokens(output) for _, output in [*text_results, *vl_results]
+    )
 
     _report("mixed-concurrent", CONCURRENT_N, elapsed, latencies, total_tokens)
-    text_pairs = [(label, _output_text(output)) for (label, _), (_, output) in zip(text_items, text_results)]
-    vl_pairs = [(case, _output_text(output)) for (case, _, _), (_, output) in zip(vl_items, vl_results)]
+    text_pairs = [
+        (label, _output_text(output))
+        for (label, _), (_, output) in zip(text_items, text_results)
+    ]
+    vl_pairs = [
+        (case, _output_text(output))
+        for (case, _, _), (_, output) in zip(vl_items, vl_results)
+    ]
     return text_pairs, vl_pairs
 
 
@@ -414,9 +443,3 @@ def test_concurrent() -> None:
                 raise AssertionError(f"Unsupported concurrent mode: {mode}")
     finally:
         engine.shutdown()
-
-
-
-
-
-

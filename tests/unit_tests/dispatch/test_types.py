@@ -36,7 +36,9 @@ class TestBackendPriority:
 
 class TestOpImpl:
     def test_create_default_impl(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -51,7 +53,9 @@ class TestOpImpl:
         assert impl.priority == BackendPriority.DEFAULT
 
     def test_create_vendor_impl_requires_vendor_name(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         with pytest.raises(ValueError, match="must specify vendor name"):
             OpImpl(
                 op_name="silu_and_mul",
@@ -61,7 +65,9 @@ class TestOpImpl:
             )
 
     def test_create_vendor_impl_with_vendor_name(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="vendor.cuda",
@@ -74,7 +80,9 @@ class TestOpImpl:
         assert impl.kind == BackendImplKind.VENDOR
 
     def test_is_available_default_true(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -86,6 +94,7 @@ class TestOpImpl:
     def test_is_available_with_checker_true(self):
         def fn(x):
             return x
+
         fn._is_available = lambda: True
         impl = OpImpl(
             op_name="silu_and_mul",
@@ -98,6 +107,7 @@ class TestOpImpl:
     def test_is_available_with_checker_false(self):
         def fn(x):
             return x
+
         fn._is_available = lambda: False
         impl = OpImpl(
             op_name="silu_and_mul",
@@ -110,6 +120,7 @@ class TestOpImpl:
     def test_is_available_handles_exception(self):
         def fn(x):
             return x
+
         fn._is_available = lambda: 1 / 0
         impl = OpImpl(
             op_name="silu_and_mul",
@@ -120,7 +131,9 @@ class TestOpImpl:
         assert impl.is_available() is False
 
     def test_frozen_dataclass(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",
@@ -131,7 +144,9 @@ class TestOpImpl:
             impl.op_name = "new_name"
 
     def test_supported_dtypes(self):
-        def fn(x): return x
+        def fn(x):
+            return x
+
         impl = OpImpl(
             op_name="silu_and_mul",
             impl_id="default.flagos",

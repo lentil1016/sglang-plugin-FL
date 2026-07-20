@@ -67,7 +67,9 @@ def server(plugin_dispatch_log):
 
     with SGLangServer(
         model_path=_CFG.model,
-        tp_size=int(_CFG.engine.get("tp_size", _CFG.engine.get("tensor_parallel_size", 1))),
+        tp_size=int(
+            _CFG.engine.get("tp_size", _CFG.engine.get("tensor_parallel_size", 1))
+        ),
         api_key=serve.api_key,
         served_model_name=serve.served_model_name,
         max_retries=serve.startup_retries,
@@ -116,6 +118,7 @@ def test_plugin_activated(server):
         "SGLang became ready without the sglang_fl activation marker. "
         f"Server log tail:\n{logs[-4000:]}"
     )
+
 
 @pytest.mark.e2e
 def test_model_list(base_url, headers):
@@ -279,6 +282,7 @@ def test_endpoint(endpoint: str, base_url, headers):
     runner = _ENDPOINT_RUNNERS.get(endpoint)
     assert runner is not None, f"Unknown endpoint type: {endpoint}"
     runner(base_url, headers)
+
 
 @pytest.mark.e2e
 def test_plugin_dispatch_activity(server, base_url, headers, plugin_dispatch_log):

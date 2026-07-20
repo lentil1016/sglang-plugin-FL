@@ -21,26 +21,28 @@ def load_benchmark_case() -> dict[str, Any]:
 
 def to_cli_args(params: dict[str, Any], skip: set[str] | None = None) -> list[str]:
     """Convert snake_case parameter mapping to CLI args."""
-    
+
     skip = skip or set()
     args: list[str] = []
-    
+
     for key, value in params.items():
         if key in skip or value is None or value is False:
             continue
-        
+
         flag = "--" + key.replace("_", "-")
         if value is True or value == "":
             args.append(flag)
         else:
             args.extend([flag, str(value)])
-            
+
     return args
 
 
-def run_command(command: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+def run_command(
+    command: list[str], timeout: int | None = None
+) -> subprocess.CompletedProcess[str]:
     print("[benchmark] Command:", " ".join(command))
-    
+
     env = os.environ.copy()
     local_no_proxy = "127.0.0.1,localhost,::1"
     for key in ("NO_PROXY", "no_proxy"):
@@ -58,10 +60,10 @@ def run_command(command: list[str], timeout: int | None = None) -> subprocess.Co
     print(result.stderr)
     return result
 
+
 def read_last_jsonl(path: Path) -> dict[str, Any]:
     lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
     lines = [line for line in lines if line]
     if not lines:
         raise AssertionError(f"No JSONL records found in {path}")
     return json.loads(lines[-1])
-

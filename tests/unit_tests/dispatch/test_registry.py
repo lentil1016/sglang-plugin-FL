@@ -20,7 +20,11 @@ class TestOpRegistryBasic:
     def test_register_many(self, registry, make_impl):
         impls = [
             make_impl(op_name="silu_and_mul", impl_id="default.flagos"),
-            make_impl(op_name="silu_and_mul", impl_id="reference.pytorch", kind=BackendImplKind.REFERENCE),
+            make_impl(
+                op_name="silu_and_mul",
+                impl_id="reference.pytorch",
+                kind=BackendImplKind.REFERENCE,
+            ),
             make_impl(op_name="rms_norm", impl_id="default.flagos"),
         ]
         registry.register_many(impls)

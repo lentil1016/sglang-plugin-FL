@@ -6,7 +6,12 @@ import sys
 
 import pytest
 
-from tests.benchmarks.utils import load_benchmark_case, read_last_jsonl, run_command, to_cli_args
+from tests.benchmarks.utils import (
+    load_benchmark_case,
+    read_last_jsonl,
+    run_command,
+    to_cli_args,
+)
 
 
 @pytest.mark.benchmark

@@ -194,9 +194,8 @@ class SGLangServer:
         if self._log_file is None:
             return ""
         self._log_file.flush()
-        return Path(self._log_file.name).read_text(
-            encoding="utf-8", errors="replace"
-        )
+        return Path(self._log_file.name).read_text(encoding="utf-8", errors="replace")
+
     def _fail_with_logs(self, message: str) -> None:
         logs = ""
         log_path = ""
@@ -213,4 +212,3 @@ class SGLangServer:
         pytest.fail(
             f"{message}.{extra}\nLogs ({len(logs)} chars, showing tail):\n{tail}"
         )
-

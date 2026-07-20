@@ -38,7 +38,9 @@ class _FakeFlagCX:
         self.calls.append(("reduce_scatter", tuple(output.shape), tuple(input_.shape)))
         output.copy_(input_[: output.shape[0]])
 
-    def reduce_scatterv(self, output: torch.Tensor, input_: torch.Tensor, sizes) -> None:
+    def reduce_scatterv(
+        self, output: torch.Tensor, input_: torch.Tensor, sizes
+    ) -> None:
         self.calls.append(("reduce_scatterv", list(sizes)))
         output.copy_(input_[: output.shape[0]])
 
@@ -357,7 +359,9 @@ def test_all_gatherv_output_shape_and_torch_path(monkeypatch) -> None:
 def test_all_gatherv_equal_sizes_uses_regular_all_gather(monkeypatch) -> None:
     from sglang_fl.distributed import communicator as comm_mod
 
-    dist_all_gather = Mock(side_effect=lambda output, input_, group=None: output.zero_())
+    dist_all_gather = Mock(
+        side_effect=lambda output, input_, group=None: output.zero_()
+    )
     monkeypatch.setattr(comm_mod.dist, "all_gather_into_tensor", dist_all_gather)
     comm = _make_comm(world_size=2, rank=0)
 
@@ -385,7 +389,9 @@ def test_broadcast_tensor_dict_sender_metadata_and_tensor_route(monkeypatch) -> 
         sent_objects.append((obj, src))
         return obj
 
-    out = comm.broadcast_tensor_dict(tensor_dict, src=0, rank_in_group=0, broadcast_object_fn=broadcast_object_fn)
+    out = comm.broadcast_tensor_dict(
+        tensor_dict, src=0, rank_in_group=0, broadcast_object_fn=broadcast_object_fn
+    )
 
     assert out is tensor_dict
     metadata = sent_objects[0][0]
@@ -394,7 +400,9 @@ def test_broadcast_tensor_dict_sender_metadata_and_tensor_route(monkeypatch) -> 
     assert metadata[1][0] == "empty"
     assert isinstance(metadata[1][1], TensorMetadata)
     assert metadata[2] == ("value", "metadata-only")
-    dist_broadcast.assert_called_once_with(tensor_dict["tensor"], src=10, group="cpu-group")
+    dist_broadcast.assert_called_once_with(
+        tensor_dict["tensor"], src=10, group="cpu-group"
+    )
 
 
 def test_broadcast_tensor_dict_receiver_allocates_from_metadata(monkeypatch) -> None:
@@ -410,7 +418,9 @@ def test_broadcast_tensor_dict_receiver_allocates_from_metadata(monkeypatch) -> 
         ("value", 123),
     ]
 
-    out = comm.broadcast_tensor_dict(None, src=0, rank_in_group=1, broadcast_object_fn=lambda obj, src: metadata)
+    out = comm.broadcast_tensor_dict(
+        None, src=0, rank_in_group=1, broadcast_object_fn=lambda obj, src: metadata
+    )
 
     assert out["tensor"].shape == (2,)
     assert out["empty"].shape == (0,)
