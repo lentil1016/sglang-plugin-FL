@@ -1,0 +1,169 @@
+# CI image for sglang-plugin-FL on Huawei Ascend NPU
+# Base: quay.io/ascend/cann (official CANN toolkit image)
+#
+# Build:
+#   docker build -t sglang-plugin-fl:latest-ascend-ci \
+#     -f container/ascend/containerfile .
+#
+# Push target: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-ascend-ci
+
+ARG CANN_VERSION=8.5.1
+ARG CANN_CHIP=a3
+ARG UBUNTU_VERSION=22.04
+ARG PYTHON_VERSION=3.11
+
+FROM harbor.baai.ac.cn/flagos-dev/cache:cann-${CANN_VERSION}-${CANN_CHIP}-ubuntu${UBUNTU_VERSION}-py${PYTHON_VERSION} AS base
+
+ARG SGLANG_VERSION=0.5.11
+ARG FLAGGEMS_VERSION=v5.0.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# CANN environment: expose toolkit libs/python on the default search path so
+# torch_npu imports without sourcing set_env.sh. Applies to interactive
+# `docker run` and to GitHub Actions `docker exec` steps alike.
+ENV ASCEND_TOOLKIT_HOME=/usr/local/Ascend/ascend-toolkit/latest
+ENV LD_LIBRARY_PATH=${ASCEND_TOOLKIT_HOME}/lib64:${ASCEND_TOOLKIT_HOME}/lib64/plugin/opskernel:${ASCEND_TOOLKIT_HOME}/lib64/plugin/nnengine:${ASCEND_TOOLKIT_HOME}/lib64/davinci:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/common:/usr/local/Ascend/driver/lib64/driver:${LD_LIBRARY_PATH}
+ENV PYTHONPATH=${ASCEND_TOOLKIT_HOME}/python/site-packages:${PYTHONPATH}
+ENV ASCEND_OPP_PATH=${ASCEND_TOOLKIT_HOME}/opp
+ENV ASCEND_AICPU_PATH=${ASCEND_TOOLKIT_HOME}
+ENV ASCEND_HOME_PATH=${ASCEND_TOOLKIT_HOME}
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        curl \
+        wget \
+        vim \
+        cmake \
+        ninja-build \
+        libibverbs-dev \
+        libnuma-dev \
+        numactl \
+        libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel cmake
+
+# Install triton-ascend (required by FlagGems NPU backend)
+RUN pip install --no-cache-dir triton-ascend==3.2.0
+
+# jemalloc preload for better memory allocation
+RUN echo "export LD_PRELOAD=/usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2:\${LD_PRELOAD}" >> ~/.bashrc
+
+WORKDIR /workspace
+
+# ---------- ci stage ----------
+FROM base AS ci
+
+ARG SGLANG_VERSION=0.5.11
+ARG FLAGGEMS_VERSION=v5.0.0
+
+# Install sglang runtime + pinned dependencies (mirror docker/cuda/containerfile,
+# minus CUDA-only packages: flashinfer-python / flashinfer-cubin / nvidia-cutlass-dsl.
+# FlagGems is built from source with the NPU backend in the next step). Pinning
+# transformers/huggingface_hub/kernels/etc. together avoids the transformers 5.6.0
+# <-> kernels API mismatch (transformers 5.6.0 requires kernels 0.3.3).
+RUN VLLM_TARGET_DEVICE="empty" pip install --no-cache-dir \
+        "sglang[runtime]==${SGLANG_VERSION}" \
+        "sglang-kernel==0.4.2" \
+        "transformers==5.6.0" \
+        "huggingface_hub==1.23.0" \
+        "xgrammar==0.1.32" \
+        "scipy==1.13.1" \
+        --extra-index-url https://download.pytorch.org/whl/cpu/ && \
+    pip install --no-cache-dir --no-deps "kernels==0.3.3" && \
+    (pip uninstall -y torchcodec 2>/dev/null || true) && \
+    (pip uninstall -y triton 2>/dev/null || true) && \
+    pip cache purge
+
+# Install FlagGems (NPU backend)
+RUN pip install --no-cache-dir -U scikit-build-core==0.11 pybind11 && \
+    git clone --branch ${FLAGGEMS_VERSION} --depth 1 \
+        https://github.com/flagos-ai/FlagGems /tmp/FlagGems && \
+    pip install --no-build-isolation \
+        --config-settings=cmake.define.FLAGGEMS_BACKEND=NPU \
+        /tmp/FlagGems && \
+    rm -rf /tmp/FlagGems
+
+# Install torch_npu matching sglang 0.5.11's torch==2.11.0 pin. Per Huawei's
+# torch_npu 2.11.0rc1 compatibility table, CANN 8.5.0 already supports torch
+# 2.11.0 -- so no CANN base-image or host-driver (25.5.0) change is needed.
+RUN pip install --no-cache-dir torch-npu==2.11.0rc1
+
+# Build & install sgl_kernel_npu (SGLang's NPU kernel library; sglang 0.5.11's NPU
+# code path imports it for inference -- required for e2e). Not on PyPI; prebuilt
+# releases target torch 2.10.0 but this image has torch 2.11.0, so build from
+# source against the installed torch. Tag 2026.6.2 supports CANN 8.5.0 (>= our
+# 8.5.1). `build.sh -a kernels` builds only sgl_kernel_npu (cmake, device-free;
+# skips deepep which would need the NPU). Atlas A3 / 910C, CANN >= 8.3.RC1.
+RUN git clone --branch 2026.6.2 --depth 1 \
+        https://github.com/sgl-project/sgl-kernel-npu /tmp/sgl-kernel-npu && \
+    cd /tmp/sgl-kernel-npu && \
+    git submodule update --init --recursive --depth 1 && \
+    export ASCEND_HOME_PATH=$(readlink -f /usr/local/Ascend/ascend-toolkit/latest) && \
+    sed -i 's/--target install -j 16/--target install -j 1/' build.sh && \
+    bash build.sh -a kernels && \
+    pip install --no-cache-dir --no-deps output/sgl_kernel_npu*.whl && \
+    rm -rf /tmp/sgl-kernel-npu
+
+# Upgrade triton to triton-ascend 3.2.1 (provides triton.language.extra.cann, which
+# sgl_kernel_npu imports at runtime; PyPI's 3.2.0 lacks it). triton-ascend 3.2.1 is an
+# addon to triton 3.5.0, installed from the official triton-ascend index with --no-deps
+# to avoid downgrading numpy/pytest/etc. Also patch flashinfer so `import flashinfer.comm`
+# does not assert libcudart at import -- flashinfer is CUDA-only but sglang imports
+# flashinfer.comm unconditionally in its engine; on NPU the import must succeed even
+# though the CUDA IPC funcs are unused at runtime.
+RUN pip uninstall -y triton-ascend 2>/dev/null || true && \
+    pip install --no-cache-dir --no-deps "triton==3.5.0" && \
+    pip install --no-cache-dir --no-deps "triton-ascend==3.2.1" \
+        --extra-index-url=https://triton-ascend.osinfra.cn/pypi/simple && \
+    F=$(python -c "import site; print(site.getsitepackages()[0])")/flashinfer/comm/cuda_ipc.py && \
+    python -c "import pathlib; p=pathlib.Path('$F'); s=p.read_text(); p.write_text(s.replace('cudart = CudaRTLibrary()', 'try:\n    cudart = CudaRTLibrary()\nexcept Exception:\n    cudart = None'))" && \
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -c "import triton.language.extra.cann; from flashinfer.comm import MoeAlltoAll, moe_a2a_get_workspace_size_per_rank; print('extra.cann + flashinfer.comm OK')"
+
+# Patch FlagGems v5.0.0's backend so the ascend vendor loads triton-ascend's
+# `triton.language.extra.cann.libdevice`. FlagGems v5.0.0 builds the path from the
+# device name (extra.<device_name>.libdevice) which doesn't exist; triton-ascend 3.2.1
+# ships `extra.cann`. Without this, FlagGems falls back to triton.language.math, whose
+# `pow` was removed in triton 3.5.0 -> "module 'triton.language.math' has no attribute
+# 'pow'" at import. Fall back to cann.libdevice (which has pow) on ImportError.
+RUN FG=$(python -c "import site; print(site.getsitepackages()[0])")/flag_gems/runtime/backend/__init__.py && \
+    python -c "import pathlib; p=pathlib.Path('$FG'); s=p.read_text(); old='    tl_extra_backend_module = importlib.import_module(module_str)'; q=chr(39); new='    try:\n        tl_extra_backend_module = importlib.import_module(module_str)\n    except ImportError:\n        tl_extra_backend_module = importlib.import_module('+q+'triton.language.extra.cann.libdevice'+q+')'; assert old in s, 'flaggems anchor not found'; p.write_text(s.replace(old, new)); print('flaggems backend patched for cann')" && \
+    FILL=$(python -c "import site; print(site.getsitepackages()[0])")/flag_gems/runtime/backend/_ascend/ops/fill.py && \
+    python -c "import pathlib; p=pathlib.Path('$FILL'); s=p.read_text(); s2=s.replace('N = self.numel()', 'N = self.numel()\n    if N == 0:\n        return self'); assert s2 != s, 'fill anchor not found'; p.write_text(s2); print('fill empty-tensor patched')"
+
+# Patch sglang's KV cache allocator: torch_npu's arange kernel coreDim is capped at
+# 65535, so `torch.arange(num_pages)` crashes when num_pages > 65535 (a 64GB NPU with
+# mem_fraction 0.7 -> ~1M pages). Create free_pages in chunks of 65535 so each arange
+# stays under the coreDim limit. CUDA's arange uses a 3D grid and has no such limit, so
+# this only affects the NPU path. Result is identical ([1..num_pages]).
+RUN ALLOC=$(python -c "import site; print(site.getsitepackages()[0])")/sglang/srt/mem_cache/allocator.py && \
+    python -c "import pathlib; p=pathlib.Path('$ALLOC'); s=p.read_text(); old='        self.free_pages = torch.arange(\n            1, self.num_pages + 1, dtype=torch.int64, device=self.device\n        )'; new='        _np = self.num_pages\n        if _np <= 65535:\n            self.free_pages = torch.arange(1, _np + 1, dtype=torch.int64, device=self.device)\n        else:\n            self.free_pages = torch.cat([torch.arange(s, min(s + 65535, _np + 1), dtype=torch.int64, device=self.device) for s in range(1, _np + 1, 65535)])'; assert old in s, 'allocator anchor not found'; p.write_text(s.replace(old, new)); print('allocator arange chunked for torch_npu coreDim limit')"
+
+# Build-time self-check. A full `import torch_npu` cannot run here: it loads
+# libascend_hal.so from the NPU *driver*, which is only mounted at runtime (the
+# build host has no Ascend hardware). So we verify the installable parts --
+# torch_npu package present at 2.11.0.x, torch 2.11.0 imports cleanly with
+# backend auto-load disabled (so torch does not pull in the npu backend here),
+# and sglang.srt.platforms (the API sglang_fl.platform imports) is importable
+# -- this is the API sglang 0.4.7 lacked, forcing the 0.5.11 upgrade. The final
+# `import torch_npu` validation runs on the offline host after `docker load`.
+RUN python -c "import importlib.metadata as m; v=m.version('torch-npu'); assert v.startswith('2.11.0'), v; print('torch_npu pkg', v)" && \
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -c "import torch; assert torch.__version__.startswith('2.11.0'), torch.__version__; from sglang.srt.platforms.device_mixin import DeviceCapability, PlatformEnum; print('torch', torch.__version__, '| sglang.srt.platforms OK')"
+
+# Test and dev tools
+RUN pip install --no-cache-dir \
+        pytest \
+        pytest-cov \
+        pytest-timeout \
+        pytest-json-report \
+        pytest-metadata \
+        numpy \
+        requests \
+        ruff \
+        pyyaml
+
+WORKDIR /workspace

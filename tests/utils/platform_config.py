@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -178,7 +179,19 @@ def _resolve_platform_file(platform: str, platforms_dir: Path) -> Path:
     for candidate in platforms_dir.glob("*.yaml"):
         if candidate.stem == "template":
             continue
-        raw = _load_structured(candidate)
+        # Fallback discovery: a single misencoded or unparseable sibling file
+        # must not block resolution of the requested platform. Skip it with a
+        # warning so we either find a match below or raise a clear "not found".
+        try:
+            raw = _load_structured(candidate)
+        except Exception as exc:  # best-effort discovery scan
+            warnings.warn(
+                f"Skipping platform config {candidate.name}: not valid UTF-8 or"
+                f" failed to parse ({exc}).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
         device_types = raw.get("device_types", {}) or {}
         names = device_types if isinstance(device_types, list) else device_types.keys()
         if platform in names:

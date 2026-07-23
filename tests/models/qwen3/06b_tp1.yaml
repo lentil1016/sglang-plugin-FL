@@ -8,10 +8,10 @@ llm:
 
 generate:
   prompts:
-    - text: "How many states are there in the United States?"
-      expected: "50"
     - text: "The capital of France is"
       expected: "Paris"
+    - text: "1, 2, 3, 4, 5,"
+      expected: "6"
   sampling:
     max_new_tokens: 16
     temperature: 0.0
