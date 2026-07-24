@@ -15,7 +15,7 @@ ARG PYTHON_VERSION=3.11
 FROM harbor.baai.ac.cn/flagos-dev/cache:cann-${CANN_VERSION}-${CANN_CHIP}-ubuntu${UBUNTU_VERSION}-py${PYTHON_VERSION} AS base
 
 ARG SGLANG_VERSION=0.5.11
-ARG FLAGGEMS_VERSION=v5.0.0
+ARG FLAGGEMS_VERSION=v5.3.1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -59,7 +59,7 @@ WORKDIR /workspace
 FROM base AS ci
 
 ARG SGLANG_VERSION=0.5.11
-ARG FLAGGEMS_VERSION=v5.0.0
+ARG FLAGGEMS_VERSION=v5.3.1
 
 # Install sglang runtime + pinned dependencies (mirror docker/cuda/containerfile,
 # minus CUDA-only packages: flashinfer-python / flashinfer-cubin / nvidia-cutlass-dsl.
@@ -79,14 +79,39 @@ RUN VLLM_TARGET_DEVICE="empty" pip install --no-cache-dir \
     (pip uninstall -y triton 2>/dev/null || true) && \
     pip cache purge
 
-# Install FlagGems (NPU backend)
-RUN pip install --no-cache-dir -U scikit-build-core==0.11 pybind11 && \
+# Build FlagGems v5.3.1 + FlagCX v0.13.0 from source in one layer (mirrors
+# docker/cuda/containerfile, aligned to the same versions).
+#  - FlagGems v5.3.1: build backend switched from scikit-build-core to
+#    setuptools.build_meta (PEP 517). setup.py is now a pure shim that only sets
+#    packages, so there is no cmake.define.FLAGGEMS_BACKEND knob anymore -- the
+#    NPU backend ships as pure Python/Triton in the wheel and is selected at
+#    runtime from torch_npu + triton-ascend (installed below). The build needs
+#    only setuptools<77 + setuptools-scm<10; SETUPTOOLS_SCM_PRETEND_VERSION
+#    avoids git-describe issues in the --depth 1 clone. v5.3.1 also fixes the
+#    v5.3.0 Ascend argmax regression (duplicate @libentry(), #4467).
+#  - FlagCX v0.13.0: host-API only (COMPILE_KERNEL=0, no device code), built
+#    USE_ASCEND=1 against HCCL from the CANN toolkit (CCL_HOME defaults to
+#    /usr/local/Ascend/ascend-toolkit/latest = $ASCEND_TOOLKIT_HOME). sglang_fl's
+#    flagcx.py loads $FLAGCX_PATH/build/lib/libflagcx.so + the wrapper at
+#    $FLAGCX_PATH/plugin/interservice/flagcx_wrapper.py (source-tree layout from
+#    `make`, not the PyPI wheel layout).
+ARG FLAGCX_VERSION=v0.13.0
+RUN pip install --no-cache-dir -U "setuptools<77" "setuptools-scm>=8,<10" wheel && \
     git clone --branch ${FLAGGEMS_VERSION} --depth 1 \
         https://github.com/flagos-ai/FlagGems /tmp/FlagGems && \
-    pip install --no-build-isolation \
-        --config-settings=cmake.define.FLAGGEMS_BACKEND=NPU \
-        /tmp/FlagGems && \
-    rm -rf /tmp/FlagGems
+    SETUPTOOLS_SCM_PRETEND_VERSION=${FLAGGEMS_VERSION#v} \
+    pip install --no-build-isolation /tmp/FlagGems && \
+    rm -rf /tmp/FlagGems && \
+    git clone --branch ${FLAGCX_VERSION} --depth 1 \
+        https://github.com/flagos-ai/FlagCX /opt/FlagCX && \
+    cd /opt/FlagCX && \
+    git submodule update --init --recursive --depth 1 && \
+    make USE_ASCEND=1 CCL_HOME="${ASCEND_TOOLKIT_HOME}" -j"$(nproc)" && \
+    test -f build/lib/libflagcx.so && \
+    test -f plugin/interservice/flagcx_wrapper.py && \
+    PYTHONPATH=/opt/FlagCX python -c "from plugin.interservice.flagcx_wrapper import FLAGCXLibrary; print('flagcx wrapper import OK')" && \
+    rm -rf .git
+ENV FLAGCX_PATH=/opt/FlagCX
 
 # Install torch_npu matching sglang 0.5.11's torch==2.11.0 pin. Per Huawei's
 # torch_npu 2.11.0rc1 compatibility table, CANN 8.5.0 already supports torch
@@ -99,12 +124,16 @@ RUN pip install --no-cache-dir torch-npu==2.11.0rc1
 # source against the installed torch. Tag 2026.6.2 supports CANN 8.5.0 (>= our
 # 8.5.1). `build.sh -a kernels` builds only sgl_kernel_npu (cmake, device-free;
 # skips deepep which would need the NPU). Atlas A3 / 910C, CANN >= 8.3.RC1.
+# cmake's config_envs.cmake runs `python -c "import pybind11"` to locate TORCH_DIR,
+# so pybind11 must be pip-installed before build.sh (v5.3.1's FlagGems build no
+# longer pulls it in as a side-effect, unlike v5.3.0's scikit-build-core install).
 RUN git clone --branch 2026.6.2 --depth 1 \
         https://github.com/sgl-project/sgl-kernel-npu /tmp/sgl-kernel-npu && \
     cd /tmp/sgl-kernel-npu && \
     git submodule update --init --recursive --depth 1 && \
+    pip install --no-cache-dir pybind11 && \
     export ASCEND_HOME_PATH=$(readlink -f /usr/local/Ascend/ascend-toolkit/latest) && \
-    sed -i 's/--target install -j 16/--target install -j 1/' build.sh && \
+    sed -i 's/--target install -j 16/--target install -j 8/' build.sh && \
     bash build.sh -a kernels && \
     pip install --no-cache-dir --no-deps output/sgl_kernel_npu*.whl && \
     rm -rf /tmp/sgl-kernel-npu
@@ -124,16 +153,15 @@ RUN pip uninstall -y triton-ascend 2>/dev/null || true && \
     python -c "import pathlib; p=pathlib.Path('$F'); s=p.read_text(); p.write_text(s.replace('cudart = CudaRTLibrary()', 'try:\n    cudart = CudaRTLibrary()\nexcept Exception:\n    cudart = None'))" && \
     TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -c "import triton.language.extra.cann; from flashinfer.comm import MoeAlltoAll, moe_a2a_get_workspace_size_per_rank; print('extra.cann + flashinfer.comm OK')"
 
-# Patch FlagGems v5.0.0's backend so the ascend vendor loads triton-ascend's
-# `triton.language.extra.cann.libdevice`. FlagGems v5.0.0 builds the path from the
-# device name (extra.<device_name>.libdevice) which doesn't exist; triton-ascend 3.2.1
-# ships `extra.cann`. Without this, FlagGems falls back to triton.language.math, whose
-# `pow` was removed in triton 3.5.0 -> "module 'triton.language.math' has no attribute
-# 'pow'" at import. Fall back to cann.libdevice (which has pow) on ImportError.
-RUN FG=$(python -c "import site; print(site.getsitepackages()[0])")/flag_gems/runtime/backend/__init__.py && \
-    python -c "import pathlib; p=pathlib.Path('$FG'); s=p.read_text(); old='    tl_extra_backend_module = importlib.import_module(module_str)'; q=chr(39); new='    try:\n        tl_extra_backend_module = importlib.import_module(module_str)\n    except ImportError:\n        tl_extra_backend_module = importlib.import_module('+q+'triton.language.extra.cann.libdevice'+q+')'; assert old in s, 'flaggems anchor not found'; p.write_text(s.replace(old, new)); print('flaggems backend patched for cann')" && \
-    FILL=$(python -c "import site; print(site.getsitepackages()[0])")/flag_gems/runtime/backend/_ascend/ops/fill.py && \
-    python -c "import pathlib; p=pathlib.Path('$FILL'); s=p.read_text(); s2=s.replace('N = self.numel()', 'N = self.numel()\n    if N == 0:\n        return self'); assert s2 != s, 'fill anchor not found'; p.write_text(s2); print('fill empty-tensor patched')"
+# FlagGems v5.3.1 retains all the v5.0.0->v5.3.0 fixes, so none of the old source
+# patches are needed:
+#  - cann.libdevice: set_tl_extra_backend_module builds module_str from
+#    triton_extra_name ("cann" for triton>=3.2.0) -> imports
+#    triton.language.extra.cann.libdevice natively (the v5.0.0 patch's fallback target).
+#  - fill_ empty-tensor: ships the `if N == 0: return self` guard (fix #4105).
+#  - exponential_ philox_seed int32->int64 compile bug: fixed in 373951815 (since v5.3.0).
+#  - argmax crash: duplicate @libentry() removed (#4467, since v5.3.1) -- this was
+#    the v5.3.0 regression that had made v5.3.0 undeployable on Ascend.
 
 # Patch sglang's KV cache allocator: torch_npu's arange kernel coreDim is capped at
 # 65535, so `torch.arange(num_pages)` crashes when num_pages > 65535 (a 64GB NPU with
