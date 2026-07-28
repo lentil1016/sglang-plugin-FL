@@ -50,7 +50,13 @@ unsupported_features: []
 # Examples for Ascend (uncomment/adjust as needed):
 #   HCCL_ALGO: "Ring"
 #   HCCL_BUFFSIZE: "200"
-env_defaults: {}
+env_defaults:
+  # v5.3.1 workarounds on Ascend 910C:
+  #   mul/index_put_/_index_put_impl_/index: crash/correctness bugs (recursion/segfault/gibberish).
+  #   linear: general ops.linear has ~15ms/call per-launch overhead on NPU (vs v5.0.0 ascend addmm
+  #     0.16ms) -> decode 0.25 tok/s. Remove `linear` when FlagGems fixes the per-launch overhead.
+  #   See docs/ascend-flaggems-v5.3.1-perf-regression.md.
+  SGLANG_FL_FLAGOS_BLACKLIST: "mul,index_put_,_index_put_impl_,index,linear"
 
 # ---- Device-specific test configurations ------------------------------------
 910c:
