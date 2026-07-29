@@ -4,19 +4,20 @@
 platform: ascend
 
 # Docker image for this hardware
-ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-ascend-ci
+ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci
 
 # Runner labels for this hardware
 runner_labels:
   - ci-sglang-plugin-fl-ascend
 
 # Container volumes (hardware-specific paths)
-# - /data: model files (shared with the cuda runner)
+# - /mnt/airs-business/cicd/models -> /data/models/Qwen: model files (same host
+#   path as the cuda runner, so the model cache is shared)
 # - /usr/local/Ascend/driver: NPU kernel-mode driver libs from the host (the CI
 #   image ships the CANN toolkit, but the driver lives on the host)
 # - /usr/local/slog: Ascend logging
 container_volumes:
-  - /data:/data
+  - /mnt/airs-business/cicd/models:/data/models/Qwen
   - /usr/local/Ascend/driver:/usr/local/Ascend/driver
   - /usr/local/slog:/usr/local/slog
 
