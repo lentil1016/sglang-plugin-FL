@@ -38,25 +38,20 @@ def to_cli_args(params: dict[str, Any], skip: set[str] | None = None) -> list[st
     return args
 
 
-def run_command(command: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
-    print("[benchmark] Command:", " ".join(command))
-    
+def run_command(command: list[str], timeout: int | None = 300) -> subprocess.CompletedProcess[str]:
+    print("[benchmark] Command:", " ".join(command), flush=True)
+
     env = os.environ.copy()
     local_no_proxy = "127.0.0.1,localhost,::1"
     for key in ("NO_PROXY", "no_proxy"):
         current = env.get(key, "")
         env[key] = ",".join(filter(None, [current, local_no_proxy]))
 
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=timeout,
-    )
-    print(result.stdout)
-    print(result.stderr)
-    return result
+    # Stream stdout/stderr live (no capture) so CI logs reveal where a hang
+    # occurs, and bound the run so a stuck bench fails fast instead of waiting
+    # for the job's 30m ceiling. result.stdout/stderr are None by design;
+    # assertions rely on returncode plus the streamed output above.
+    return subprocess.run(command, env=env, timeout=timeout)
 
 def read_last_jsonl(path: Path) -> dict[str, Any]:
     lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
