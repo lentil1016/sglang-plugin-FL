@@ -1,0 +1,44 @@
+# Ascend (Huawei NPU) Hardware Configuration
+# This file defines CI/CD settings for Huawei Ascend NPU testing.
+
+platform: ascend
+
+# Docker image for this hardware
+ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:latest-ascend-ci
+
+# Runner labels for this hardware
+runner_labels:
+  - ci-sglang-plugin-fl-ascend
+
+# Container volumes (hardware-specific paths)
+# - /data: model files (shared with the cuda runner)
+# - /usr/local/Ascend/driver: NPU kernel-mode driver libs from the host (the CI
+#   image ships the CANN toolkit, but the driver lives on the host)
+# - /usr/local/slog: Ascend logging
+container_volumes:
+  - /data:/data
+  - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+  - /usr/local/slog:/usr/local/slog
+
+# Container options (--device for NPU access; --init reaps orphan zombies).
+# NPU devices are passed via --device (there is no --gpus equivalent for Ascend);
+# adjust the /dev/davinciN list to match the runner's actual NPU count.
+# --user root is required: CI images install CANN/torch_npu libs under system paths,
+# and pip install needs write access to /usr/local. This matches org convention.
+# --init: tini as PID 1 reaps orphan zombies from sglang TP workers on shutdown
+# (PID 1 was tail -f /dev/null, never wait()s -> zombies pile up, kill_process_tree times out)
+container_options: >-
+  --hostname sglang-plugin-fl
+  --ipc=host
+  --shm-size=64g
+  --ulimit memlock=-1
+  --ulimit stack=67108864
+  --user root
+  --device /dev/davinci0
+  --device /dev/davinci1
+  --device /dev/davinci2
+  --device /dev/davinci3
+  --device /dev/davinci_manager
+  --device /dev/devmm_svm
+  --device /dev/hisi_hdc
+  --init
