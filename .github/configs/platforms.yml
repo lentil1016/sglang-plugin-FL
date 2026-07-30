@@ -10,3 +10,9 @@ platforms:
     enabled: true
   ascend:
     enabled: true
+  # Moore Threads MUSA (MTT S5000). Disabled by default: the mthreads self-hosted
+  # runner (ci-sglang-plugin-fl-mthreads) is not registered for this repo yet. Flip
+  # to `enabled: true` once the runner is online and the musa CI image is pushed to
+  # harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-musa-ci.
+  musa:
+    enabled: false
