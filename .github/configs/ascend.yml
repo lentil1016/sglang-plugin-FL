@@ -10,15 +10,13 @@ ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci
 runner_labels:
   - ci-sglang-plugin-fl-ascend
 
-# Host paths mounted into the CI container.
-# - /usr/local/Ascend/driver: NPU driver lives on the HOST, not in the CANN
-#   toolkit image. Without it, npu-smi is missing AND torch_npu fails to load
-#   its backend extension (driver/lib64 absent). Required for any NPU access.
-#   check.sh auto-adds driver/tools to PATH so npu-smi runs with no image rebuild.
-# Model cache + /usr/local/slog mounts are omitted on this runner (host paths not
-# present); re-add per-runner if needed (e.g. for e2e model files).
-container_volumes:
-  - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+# No host volumes on this runner. It is a K8s pod that exposes /dev/davinci*
+# device nodes (kernel driver loaded - 8 NPUs, davinci0..7) but has NO userspace
+# driver on the host: /usr/local/Ascend does not exist, so mounting
+# /usr/local/Ascend/driver fails with ENOENT at container init. The driver
+# userspace must come from the CI image (or be mounted by ops), not the host.
+# Confirmed via .github/workflows/diag_ascend_host.yml.
+container_volumes: []
 
 # Container options (--device for NPU access; --init reaps orphan zombies).
 # NPU devices are passed via --device (there is no --gpus equivalent for Ascend);
