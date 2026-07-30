@@ -10,20 +10,12 @@ ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci
 runner_labels:
   - ci-sglang-plugin-fl-ascend
 
-# Container volumes. DooD mode (runner uses the node docker socket) does NOT
-# auto-mount anything - unlike the nvidia-container-toolkit hook CUDA relies on
-# (NVIDIA_VISIBLE_DEVICES), Ascend has no equivalent, so the driver userspace and
-# the model cache must be mounted explicitly from the node. Device nodes are
-# passed via --device in container_options below.
-# - /mnt/airs-business/cicd/models -> /data/models/Qwen: model cache (same host
-#   path as the cuda runner, so the cache is shared).
-# - /usr/local/Ascend/driver: NPU driver userspace (libascend_hal.so, libruntime.so,
-#   tools/npu-smi). The CI image ships only the CANN toolkit; the driver lives on
-#   the node. check.sh auto-adds driver/tools to PATH so npu-smi runs without a
-#   rebuild. (slog mount omitted; re-add /usr/local/slog if the node has it.)
-container_volumes:
-  - /mnt/airs-business/cicd/models:/data/models/Qwen
-  - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+# No host volumes. K8s mode: ops mounts only /dev/davinci* device nodes (via
+# --device in container_options); the driver userspace is NOT on the host, so
+# mounting /usr/local/Ascend/driver would ENOENT. The driver userspace must live
+# in the CI image itself (see docker/ascend/containerfile) - ops will not provide
+# it. Device nodes are passed via --device below.
+container_volumes: []
 
 # Container options (--device for NPU access; --init reaps orphan zombies).
 # NPU devices are passed via --device (there is no --gpus equivalent for Ascend);

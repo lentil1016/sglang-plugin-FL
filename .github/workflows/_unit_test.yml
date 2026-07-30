@@ -38,8 +38,8 @@ jobs:
     timeout-minutes: 30
     container:
       image: ${{ inputs.ci_image }}
-      volumes: ${{ fromJson(inputs.container_volumes) }}
-      options: ${{ inputs.container_options }}
+      #volumes: ${{ fromJson(inputs.container_volumes) }}
+      #options: ${{ inputs.container_options }}
 
     steps:
       - name: Checkout (attempt 1)
