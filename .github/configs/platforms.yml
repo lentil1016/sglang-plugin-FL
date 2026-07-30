@@ -7,6 +7,6 @@
 
 platforms:
   cuda:
-    enabled: true
+    enabled: false  # temporarily off while testing ascend
   ascend:
     enabled: true

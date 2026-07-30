@@ -10,16 +10,7 @@ ci_image: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci
 runner_labels:
   - ci-sglang-plugin-fl-ascend
 
-# Container volumes (hardware-specific paths)
-# - /mnt/airs-business/cicd/models -> /data/models/Qwen: model files (same host
-#   path as the cuda runner, so the model cache is shared)
-# - /usr/local/Ascend/driver: NPU kernel-mode driver libs from the host (the CI
-#   image ships the CANN toolkit, but the driver lives on the host)
-# - /usr/local/slog: Ascend logging
-container_volumes:
-  - /mnt/airs-business/cicd/models:/data/models/Qwen
-  - /usr/local/Ascend/driver:/usr/local/Ascend/driver
-  - /usr/local/slog:/usr/local/slog
+container_volumes: []
 
 # Container options (--device for NPU access; --init reaps orphan zombies).
 # NPU devices are passed via --device (there is no --gpus equivalent for Ascend);
