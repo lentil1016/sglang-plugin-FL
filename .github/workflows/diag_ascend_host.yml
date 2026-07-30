@@ -1,0 +1,53 @@
+# Diagnostic: locate the Ascend driver on the runner host.
+#
+# The CI container jobs all run inside `container:` and fail at "Initialize
+# containers" when a volume mount points at a host path that doesn't exist
+# (e.g. /usr/local/Ascend/driver). This workflow runs directly on the Ascend
+# runner WITHOUT a container so it can inspect the host filesystem and tell us
+# where npu-smi / the driver libs actually live.
+name: Diag Ascend Host
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ci-sglang-plugin-fl-ascend
+    timeout-minutes: 5
+    steps:
+      - name: Probe host Ascend layout
+        run: |
+          set +e
+          echo "=== whoami / uname ==="
+          whoami; uname -a
+          echo
+          echo "=== /usr/local/Ascend (host) ==="
+          ls -la /usr/local/Ascend/ 2>&1
+          echo
+          echo "=== driver dirs on host ==="
+          ls -ld /usr/local/Ascend/driver* 2>&1
+          echo
+          echo "=== shallow tree under /usr/local/Ascend ==="
+          find /usr/local/Ascend -maxdepth 2 2>/dev/null | head -60
+          echo
+          echo "=== npu-smi on PATH? ==="
+          command -v npu-smi || echo "not on PATH"
+          echo
+          echo "=== find npu-smi anywhere (60s budget) ==="
+          timeout 60 find / -name npu-smi -type f 2>/dev/null | head -20
+          echo
+          echo "=== find driver userspace libs (60s budget) ==="
+          timeout 60 find / -name 'libruntime.so' -o -name 'libascendcl.so' 2>/dev/null | head -20
+          echo
+          echo "=== device nodes ==="
+          ls -la /dev/davinci* /dev/hisi_hdc /dev/devmm_svm /dev/davinci_manager 2>&1
+          echo
+          echo "=== lspci ascend ==="
+          lspci 2>/dev/null | grep -iE 'd100|d500|d801|d901|ascend|huawei' || echo "(no lspci match)"
+          echo
+          echo "=== installed ascend packages ==="
+          (dpkg -l 2>/dev/null | grep -iE 'ascend|npu|cann') || true
+          (rpm -qa 2>/dev/null | grep -iE 'ascend|npu|cann') || true
+          echo
+          echo "=== /usr/local/sbin ==="
+          ls -la /usr/local/sbin/ 2>&1 | head -30
