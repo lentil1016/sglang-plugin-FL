@@ -22,10 +22,15 @@
 # to the mccl distributed backend (torch_musa registers "mccl" with torch.distributed),
 # so FLAGCX_PATH is intentionally left unset (unlike cuda/ascend).
 #
-# Build (the host needs an HTTP proxy to reach github/PyPI; pass it via build-args so
-# credentials are never baked into the image -- ARGs are not persisted in the final layer):
+# Build (the host needs an HTTP proxy to reach github; pass it via build-args so
+# credentials are never baked into the image -- ARGs are not persisted in the final layer).
+# no_proxy MUST include the pip mirror: the base image's pip.conf points at
+# pypi.tuna.tsinghua.edu.cn, so without no_proxy pip tunnels to tuna through the proxy
+# (500). With no_proxy set, pip reaches tuna directly while git still uses the proxy for
+# github (sglang/FlagGems clones, plus setup_musa.py's internal flashinfer/mutlass fetches).
 #   docker build -t sglang-plugin-fl:latest-musa-ci \
 #     --build-arg http_proxy=$http_proxy --build-arg https_proxy=$https_proxy \
+#     --build-arg no_proxy=pypi.tuna.tsinghua.edu.cn \
 #     -f docker/mthreads/containerfile .
 #
 # Push target: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-musa-ci
@@ -42,6 +47,10 @@ FROM ${BASE_IMAGE} AS base
 ARG http_proxy
 ARG https_proxy
 ARG no_proxy
+# Re-declare global build args: ARGs declared before the first FROM are NOT visible to
+# RUN inside a stage unless re-declared here.
+ARG SGLANG_VERSION
+ARG FLAGGEMS_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -89,6 +98,12 @@ RUN echo "torch==2.7.1" > /tmp/musa.constraints && \
 RUN cd /tmp/sglang/sgl-kernel && \
     rm -f pyproject.toml && \
     mv pyproject_musa.toml pyproject.toml && \
+    # WORKAROUND: top_k_top_p_sampling.mu #includes <flashinfer/sampling.muh>, but upstream
+    # flashinfer (pinned at bc29697) ships only sampling.cuh; MUSA's mcc does not fall back
+    # .muh->.cuh. Point this one include at sampling.cuh (same C++ header; sampling.cuh has
+    # no .muh include chain). This is the only flashinfer .muh reference in the musa sources.
+    sed -i 's|#include <flashinfer/sampling\.muh>|#include <flashinfer/sampling.cuh>|' \
+        csrc/musa/top_k_top_p_sampling.mu && \
     MTGPU_TARGET=mp_31 SGLANG_MUSA_THIRD_PARTY_DIR=/tmp/sgl-kernel-musa-deps \
     python3 setup_musa.py install && \
     rm -rf /tmp/sgl-kernel-musa-deps

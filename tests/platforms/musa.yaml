@@ -45,9 +45,12 @@ unsupported_features: []
 #
 # TORCH_COMPILE_DISABLE=1 and SGLANG_USE_MUSA_FUSED_KERNEL=1 are already set in the
 # image (docker/mthreads/containerfile): torch_musa's inductor backend is incompatible
-# with torch 2.7.1, so MUSA runs enforce_eager. Add SGLANG_FL_FLAGOS_BLACKLIST entries
-# here if a FlagGems op misbehaves on MUSA during bring-up (mirrors cuda/ascend).
-env_defaults: {}
+# with torch 2.7.1, so MUSA runs enforce_eager. SGLANG_FL_FLAGOS_BLACKLIST: FlagGems v5.3.1's
+# `mul` op recurses infinitely on MUSA (mul -> mul_broadcast_func -> mul), mirroring the
+# ascend blacklist; blacklisting it falls back to torch_musa's native mul. Add more ops
+# here if other FlagGems ops misbehave on MUSA during bring-up.
+env_defaults:
+  SGLANG_FL_FLAGOS_BLACKLIST: "mul"
 
 # ---- Device-specific test configurations ------------------------------------
 s5000:
