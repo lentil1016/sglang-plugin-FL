@@ -1,0 +1,3 @@
+# Host NPU driver userspace tar -- proprietary + ~90m, never commit.
+# Supply it at build time (see Dockerfile.driver).
+ascend-driver-*.tar.gz

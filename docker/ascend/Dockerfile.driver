@@ -1,0 +1,47 @@
+# Overlay: bake host NPU driver userspace onto the Ascend CI base image.
+#
+# Why this exists: the Ascend GitHub Actions job runs on a self-hosted K8s
+# runner. The pod inherits /dev/davinci* device nodes (via the device plugin)
+# but the K8s NODE has no Ascend driver userspace, so there is nothing to bind
+# mount (host mounts ENOENT). torch_npu then can't load libascend_hal.so and
+# check.sh fails with "Failed to load the backend extension: torch_npu".
+# Baking the driver userspace (libascend_hal.so + friends) into the image fixes
+# it. The kernel module stays on the host (the pod reaches it through the device
+# nodes), so driver/kernel/ is excluded from the tar.
+#
+# The driver tar is NOT committed (proprietary + ~90m). Drop it in this dir:
+#   docker/ascend/ascend-driver-25.5.0.tar.gz
+# (sha256 ce2eb46f957cdc453bf49a8314ad4901f71cb23ac70f1b3b9f5c2b3117b948f5)
+#
+# Build (the driver-less base must exist under the *-base tag):
+#   docker tag <driver-less-image-id> \
+#     harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci-base
+#   docker build --platform linux/arm64 \
+#     -f docker/ascend/Dockerfile.driver \
+#     -t harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci-temp \
+#     docker/ascend/
+#
+# Push (*-base for reproducibility; -temp is what CI pulls):
+#   docker push harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci-base
+#   docker push harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci-temp
+#
+# Tag choice: CI pulls a FRESH tag (-temp), deliberately NOT reusing
+# 0.2.0-ascend-ci -- the K8s runner may serve a stale image-cache when a tag is
+# overwritten, so each driver-baked publish goes to a new tag.
+#
+# Driver: Ascend HDK 25.5.0 (aarch64), matching the CI nodes' host driver
+# (docker/ascend/containerfile line ~118 expects 25.5.0). Verified on a 910C:
+# torch.npu.is_available()=True, device_count=4, NPU matmul OK.
+
+ARG BASE=harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-ascend-ci-base
+FROM ${BASE}
+
+# The tar's top-level entry is driver/ -> extracts to /usr/local/Ascend/driver.
+COPY ascend-driver-25.5.0.tar.gz /tmp/
+RUN tar xzf /tmp/ascend-driver-25.5.0.tar.gz -C /usr/local/Ascend \
+ && rm /tmp/ascend-driver-25.5.0.tar.gz
+
+# Put npu-smi etc. on PATH. The base image's LD_LIBRARY_PATH already covers
+# /usr/local/Ascend/driver/lib64{,/common,/driver}, so torch_npu finds
+# libascend_hal.so as soon as the tar lands.
+ENV PATH=/usr/local/Ascend/driver/tools:${PATH}
