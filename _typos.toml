@@ -19,3 +19,7 @@ cann = "cann"
 # SGLang env var uses "INBALANCE" (upstream spelling)
 INBALANCE = "INBALANCE"
 lod = "lod"
+# torch.arange / np.arange - real API names, not a typo of "arrange"
+arange = "arange"
+# "unparseable" is a valid variant (common in parsing/compiler docs)
+unparseable = "unparseable"
