@@ -74,12 +74,10 @@ env_defaults:
       # Each case points to tests/models/<model>/<case>.yaml.
       inference:
         qwen3: ["06b_tp1"]
-        # qwen3_6 (hybrid / KDA linear attention) is NOT supported on Ascend yet:
-        # chunk_kda's @triton.autotune crashes at import in triton-ascend's
-        # AutoTilingTuner, and sgl-kernel-npu has no native chunk_kda kernel.
-        # Tracked in PR #57. Standard qwen3 cases below run green.
+        qwen3_6: ["27b_tp4_nograph", "35b_a3b_tp4_nograph"]
       serving:
         qwen3: ["4b_tp2"]
+        qwen3_6: ["27b_tp4_nograph", "35b_a3b_tp4_nograph"]
 
     functional:
       # Reserved for future tests/functional_tests support.
