@@ -8,23 +8,36 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 FROM harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:976baf17a1366d7c032fbfed668436fe0ee92f5f1be6b272b229c7ffb1d273d8 AS vendor-wheels
+FROM harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:558b15693d0052835c42db9b0b61ac8781b95108f6199bf7147391c2a06821c8 AS vendor-xpytorch
 
-# The native kernel was linked against xtorch_ops 0.2.3092, while the operations
-# runtime contains 0.1.2935. Install the matched xtorch_ops and xflashinfer_ops
-# wheels extracted from the digest-pinned validated development image; the final
-# rootfs still starts from the operations runtime.
+# The validated native kernel requires the matched XPytorch/XRE 5.35 ABI. The
+# operations runtime contains XRE 5.13, whose libxpu_dnn lacks the final bool
+# parameter of causal_conv1d_update. Replace the XPytorch package as one unit,
+# together with its compiled hydrax/proteus helpers, rather than mixing XPU SDK
+# libraries. The final rootfs still starts from the operations runtime.
 FROM runtime AS vendor-runtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgoogle-glog0v5 libibverbs1 && \
     rm -rf /var/lib/apt/lists/* \
+        /flagos/lib/python3.10/site-packages/torch_xmlir \
+        /flagos/lib/python3.10/site-packages/torch_xmlir.pth \
+        /flagos/lib/python3.10/site-packages/xmlir-*.dist-info \
+        /flagos/lib/python3.10/site-packages/hydrax \
+        /flagos/lib/python3.10/site-packages/hydrax-*.dist-info \
+        /flagos/lib/python3.10/site-packages/hydrax.cpython-310-x86_64-linux-gnu.so \
+        /flagos/lib/python3.10/site-packages/proteus \
+        /flagos/lib/python3.10/site-packages/proteus-*.dist-info \
+        /flagos/lib/python3.10/site-packages/proteus.cpython-310-x86_64-linux-gnu.so \
         /flagos/lib/python3.10/site-packages/xtorch_ops \
         /flagos/lib/python3.10/site-packages/xtorch_ops-*.dist-info \
         /flagos/lib/python3.10/site-packages/xflashinfer_ops \
         /flagos/lib/python3.10/site-packages/xflashinfer_ops-*.dist-info
+COPY --from=vendor-xpytorch /vendor/site-packages/ /flagos/lib/python3.10/site-packages/
 COPY --from=vendor-wheels /vendor/*.whl /tmp/vendor-wheels/
 RUN python -m pip install --no-deps /tmp/vendor-wheels/*.whl && \
     rm -rf /tmp/vendor-wheels && \
-    python -c "from importlib.metadata import version; assert version('xtorch_ops') == '0.2.3092+4adc64ed'; assert version('xflashinfer_ops') == '0.2.3092+4adc64ed'"
+    grep -Fx 'XRE: 5.35.0.0' /flagos/lib/python3.10/site-packages/torch_xmlir/_versions.txt && \
+    python -c "from importlib.metadata import version; assert version('xtorch_ops') == '0.2.3092+4adc64ed'; assert version('xflashinfer_ops') == '0.2.3092+4adc64ed'; assert version('hydrax') == '0.1.0'; assert version('proteus') == '0.1.0'"
 
 # This is the native Kunlunxin kernel from the same validated stack. The
 # sgl-kernel-shim package cannot implement its torch.ops.sgl_kernel ops.
@@ -105,7 +118,8 @@ RUN --mount=type=cache,id=kunlunxin-pip,target=/root/.cache/pip \
     python -m pip freeze > /opt/ci-requirements.freeze.txt
 
 FROM dependencies AS ci
-ENV PYTHONPATH=/opt/flagtree \
+ENV LD_LIBRARY_PATH=/flagos/lib/python3.10/site-packages/torch_xmlir:/usr/local/xccl_Linux_x86_64/so:/usr/local/mpich-3.3.2/lib:/usr/local/xpu/so:/usr/local/xpu/lib:/usr/local/xcudart/lib \
+    PYTHONPATH=/opt/flagtree \
     USE_FLAGGEMS=1 \
     SGLANG_PLUGINS=sglang_fl \
     SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK=1 \
