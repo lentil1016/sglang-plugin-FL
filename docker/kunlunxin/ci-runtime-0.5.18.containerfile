@@ -7,9 +7,28 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_RETRIES=10 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# This is the native Kunlunxin kernel from the validated development stack.
-# The sgl-kernel-shim package cannot implement its torch.ops.sgl_kernel ops.
-FROM runtime AS vendor-kernel
+FROM harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:b0faa6a570501d8445aeb6fd78c5bbe58499b2573d5316a3d2902ed994f6245a AS validated-development
+
+# The native kernel was linked against xtorch_ops 0.2.3092, while the operations
+# runtime contains 0.1.2935. Copy only that digest-pinned vendor package from the
+# validated development image; the final rootfs still starts from runtime.
+FROM runtime AS vendor-runtime
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libgoogle-glog0v5 libibverbs1 && \
+    rm -rf /var/lib/apt/lists/* \
+        /flagos/lib/python3.10/site-packages/xtorch_ops \
+        /flagos/lib/python3.10/site-packages/xtorch_ops-*.dist-info
+COPY --from=validated-development \
+    /opt/kunlun/venv/lib/python3.10/site-packages/xtorch_ops \
+    /flagos/lib/python3.10/site-packages/xtorch_ops
+COPY --from=validated-development \
+    /opt/kunlun/venv/lib/python3.10/site-packages/xtorch_ops-0.2.3092+4adc64ed.dist-info \
+    /flagos/lib/python3.10/site-packages/xtorch_ops-0.2.3092+4adc64ed.dist-info
+RUN python -c "from importlib.metadata import version; assert version('xtorch_ops') == '0.2.3092+4adc64ed'"
+
+# This is the native Kunlunxin kernel from the same validated stack. The
+# sgl-kernel-shim package cannot implement its torch.ops.sgl_kernel ops.
+FROM vendor-runtime AS vendor-kernel
 ARG SGL_KERNEL_URL=https://klx-public.bj.bcebos.com/v1/liquanfeng01/fl/deps/20260709/sglang_kernel-0.4.2.post2%2Bd4466f4499-cp39-abi3-linux_x86_64.whl
 RUN --mount=type=cache,id=kunlunxin-pip,target=/root/.cache/pip \
     python -m pip install --no-deps "${SGL_KERNEL_URL}#sha256=146d4b7a318ca7104e4152df94c3f56941006675717480f52ba3077ee5ed8315"
