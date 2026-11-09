@@ -9,9 +9,23 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LD_LIBRARY_PATH=/opt/accl-p:${LD_LIBRARY_PATH}
 
+FROM harbor.baai.ac.cn/plugin/sglang-plugin-fl@sha256:fbf1fb254dd0382ffc38229342987472a626a19a66f511e89dd341f051bd648b AS validated-development
+
+# The public kernel wheel is an NVIDIA CUDA build and cannot load on PPU. Copy
+# only the PPU-specific kernel distribution from the digest-pinned development
+# image into the operations runtime; do not inherit its rootfs.
+FROM runtime AS ppu-kernel
+COPY --from=validated-development \
+    /usr/local/lib/python3.12/site-packages/sgl_kernel \
+    /flagos/lib/python3.12/site-packages/sgl_kernel
+COPY --from=validated-development \
+    /usr/local/lib/python3.12/site-packages/sglang_kernel-0.4.2.post2+v0.1.0.ppu2.1.0.dist-info \
+    /flagos/lib/python3.12/site-packages/sglang_kernel-0.4.2.post2+v0.1.0.ppu2.1.0.dist-info
+RUN python -c "from importlib.metadata import version; assert version('sglang-kernel') == '0.4.2.post2+v0.1.0.ppu2.1.0'"
+
 # FlagCX can be built without a device. Keep its source tree for the interservice
 # Python wrapper consumed by the plugin; do not copy a development image rootfs.
-FROM runtime AS flagcx
+FROM ppu-kernel AS flagcx
 ARG FLAGCX_COMMIT=0beba7aa7e76cc0885a9929f1975857bcd310d5e
 ARG BUILD_JOBS=4
 RUN git init /opt/FlagCX && \
@@ -41,10 +55,6 @@ RUN --mount=type=cache,id=thead-pip,target=/root/.cache/pip \
         python -m pip install --no-deps /opt/FlagGems
 
 FROM gems AS vendor-kernel
-ARG PPU_SGL_KERNEL_URL=https://mirrors.aliyun.com/pypi/packages/5a/c8/262263edac73965f190bffd4c072ec65705d9176486b10eda4d5632db1ab/sglang_kernel-0.4.2.post2-cp310-abi3-manylinux2014_x86_64.whl
-RUN --mount=type=cache,id=thead-pip,target=/root/.cache/pip \
-    python -m pip install --no-deps \
-        "${PPU_SGL_KERNEL_URL}#sha256=f275ce01010933c4ea655e832a05442b766ab8f23dcfd6ff678b15e295d42203"
 
 # The operations runtime intentionally omits torchvision, while SGLang imports
 # torchvision.io.decode_jpeg at module load time.  The public 0.25.0 wheel is
