@@ -7,24 +7,24 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_RETRIES=10 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-FROM harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:b0faa6a570501d8445aeb6fd78c5bbe58499b2573d5316a3d2902ed994f6245a AS validated-development
+FROM harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:976baf17a1366d7c032fbfed668436fe0ee92f5f1be6b272b229c7ffb1d273d8 AS vendor-wheels
 
 # The native kernel was linked against xtorch_ops 0.2.3092, while the operations
-# runtime contains 0.1.2935. Copy only that digest-pinned vendor package from the
-# validated development image; the final rootfs still starts from runtime.
+# runtime contains 0.1.2935. Install the matched xtorch_ops and xflashinfer_ops
+# wheels extracted from the digest-pinned validated development image; the final
+# rootfs still starts from the operations runtime.
 FROM runtime AS vendor-runtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgoogle-glog0v5 libibverbs1 && \
     rm -rf /var/lib/apt/lists/* \
         /flagos/lib/python3.10/site-packages/xtorch_ops \
-        /flagos/lib/python3.10/site-packages/xtorch_ops-*.dist-info
-COPY --from=validated-development \
-    /opt/kunlun/venv/lib/python3.10/site-packages/xtorch_ops \
-    /flagos/lib/python3.10/site-packages/xtorch_ops
-COPY --from=validated-development \
-    /opt/kunlun/venv/lib/python3.10/site-packages/xtorch_ops-0.2.3092+4adc64ed.dist-info \
-    /flagos/lib/python3.10/site-packages/xtorch_ops-0.2.3092+4adc64ed.dist-info
-RUN python -c "from importlib.metadata import version; assert version('xtorch_ops') == '0.2.3092+4adc64ed'"
+        /flagos/lib/python3.10/site-packages/xtorch_ops-*.dist-info \
+        /flagos/lib/python3.10/site-packages/xflashinfer_ops \
+        /flagos/lib/python3.10/site-packages/xflashinfer_ops-*.dist-info
+COPY --from=vendor-wheels /vendor/*.whl /tmp/vendor-wheels/
+RUN python -m pip install --no-deps /tmp/vendor-wheels/*.whl && \
+    rm -rf /tmp/vendor-wheels && \
+    python -c "from importlib.metadata import version; assert version('xtorch_ops') == '0.2.3092+4adc64ed'; assert version('xflashinfer_ops') == '0.2.3092+4adc64ed'"
 
 # This is the native Kunlunxin kernel from the same validated stack. The
 # sgl-kernel-shim package cannot implement its torch.ops.sgl_kernel ops.
