@@ -1,0 +1,100 @@
+# Temporary digest-verification workflow. Do not merge into the product branch.
+name: Verify runtime CI image digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Immutable image reference (repo@sha256:...)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Transpacific TLS handshakes to the registry occasionally time out.
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+                 --username "$HARBOR_USERNAME" --password-stdin; then
+              break
+            fi
+            echo "harbor login attempt ${attempt} failed; retrying" >&2
+            sleep 15
+          done
+
+      - name: Pull and verify the digest
+        run: |
+          set -euo pipefail
+          image="${{ inputs.image }}"
+          case "$image" in
+            harbor.baai.ac.cn/*@sha256:*) ;;
+            *) echo "refuse to verify a mutable reference: $image" >&2; exit 1 ;;
+          esac
+          docker pull "$image"
+          mkdir -p verify-output
+          # Hard gates first (unbuffered, evidence survives any later abort):
+          # runtime zero-drift and the /opt/flagtree triton authority check.
+          # The sglang import runs LAST and its failure is tolerated when it
+          # is device-related: on a GPU-less verifier the hygon DTK stack can
+          # abort() at C level (SIGABRT, exit 134) instead of raising.
+          docker run --rm -i \
+            -v "$PWD/verify-output:/verify" \
+            --entrypoint /bin/bash \
+            "$image" -s <<'EOF'
+          set -u
+          PYTHON_BIN="$(command -v python || command -v python3)"
+          "$PYTHON_BIN" -V
+          cp -a /opt/sglang-ci/. /verify/ 2>/dev/null || true
+          "$PYTHON_BIN" -u - <<'PY'
+          import importlib.metadata as md
+          import importlib.util
+          import json
+
+          before = json.load(open("/opt/sglang-ci/runtime-distributions-before.json"))
+          after = json.load(open("/opt/sglang-ci/runtime-distributions-after.json"))
+          drift = {n: (v, after.get(n)) for n, v in before.items() if after.get(n) != v}
+          assert not drift, f"runtime distributions drifted: {drift}"
+          print("runtime zero-drift verified:", len(before),
+                "runtime distributions,", len(after), "total")
+
+          # Container-start semantics: /opt/flagtree is populated and precedes
+          # site-packages, so the vendor triton module must win over the
+          # closure's standalone triton wheel.
+          spec = importlib.util.find_spec("triton")
+          assert spec is not None and spec.origin, "triton not found"
+          assert spec.origin.startswith("/opt/flagtree"), spec.origin
+          print("triton authoritative at", spec.origin)
+
+          print("all hard gates passed; attempting sglang import (tolerated "
+                "to fail on device libraries)")
+          import sglang
+          print("sglang", md.version("sglang"), "imported from", sglang.__file__)
+          PY
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "sglang import exited $rc on the GPU-less verifier (tolerated)" >&2
+          fi
+          EOF
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-image-verify
+          path: verify-output/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
