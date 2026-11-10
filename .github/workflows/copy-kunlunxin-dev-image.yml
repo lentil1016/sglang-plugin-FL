@@ -1,0 +1,77 @@
+# Temporary registry-copy workflow. Do not merge into a product branch.
+name: Copy Kunlunxin development image to flagos-dev
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_IMAGE: harbor.baai.ac.cn/flagos-inner-models-release/flagrelease-qwen3.6-kunlunxin-tree_0.7.1a1_xpu3.6-gems_master_g7fcdbed07-sglang_0.5.18-sglang-plugin_dev_0.5.18-cx_master_g7812d2e9-python_3.10.12-torch_2.9.0-pcp_xrenone-gpu_p800-arc_amd64-driver_5.0.21.47:202610271659
+  TARGET_IMAGE: harbor.baai.ac.cn/flagos-dev/flagrelease-qwen3.6-kunlunxin-tree_0.7.1a1_xpu3.6-gems_master_g7fcdbed07-sglang_0.5.18-sglang-plugin_dev_0.5.18-cx_master_g7812d2e9-python_3.10.12-torch_2.9.0-pcp_xrenone-gpu_p800-arc_amd64-driver_5.0.21.47:202610271659
+
+jobs:
+  copy-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Install registry copy tool
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | skopeo login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+
+      - name: Copy image without changing its contents
+        run: |
+          set -euo pipefail
+          skopeo copy --all --preserve-digests \
+            "docker://${SOURCE_IMAGE}" \
+            "docker://${TARGET_IMAGE}"
+
+      - name: Verify source and target digests
+        run: |
+          set -euo pipefail
+          mkdir -p image-copy-evidence
+          skopeo inspect --raw "docker://${SOURCE_IMAGE}" \
+            > image-copy-evidence/source-manifest.json
+          skopeo inspect --raw "docker://${TARGET_IMAGE}" \
+            > image-copy-evidence/target-manifest.json
+          source_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${SOURCE_IMAGE}")"
+          target_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${TARGET_IMAGE}")"
+          source_manifest_sha="$(sha256sum image-copy-evidence/source-manifest.json | awk '{print $1}')"
+          target_manifest_sha="$(sha256sum image-copy-evidence/target-manifest.json | awk '{print $1}')"
+          {
+            echo "source: ${SOURCE_IMAGE}"
+            echo "target: ${TARGET_IMAGE}"
+            echo "source digest: ${source_digest}"
+            echo "target digest: ${target_digest}"
+            echo "source raw manifest sha256: ${source_manifest_sha}"
+            echo "target raw manifest sha256: ${target_manifest_sha}"
+          } | tee image-copy-evidence/result.txt
+          test "$source_digest" = "$target_digest"
+          test "$source_manifest_sha" = "$target_manifest_sha"
+          cmp image-copy-evidence/source-manifest.json \
+            image-copy-evidence/target-manifest.json
+
+      - name: Upload copy evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kunlunxin-development-image-copy
+          path: image-copy-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: skopeo logout harbor.baai.ac.cn || true
