@@ -87,7 +87,7 @@ jobs:
               --index-url https://resource.flagos.net/repository/flagos-pypi-hygon/simple \
               --extra-index-url https://resource.flagos.net/repository/pypi-proxy/simple \
               --extra-index-url https://pypi.org/simple \
-              '/probe/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl[srt_empty]' \
+              '/probe/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl[srt_empty,runtime_common]' \
               > /probe/sglang-srt-empty-dry-run.log 2>&1; then
               dry_run_rc=0
               break

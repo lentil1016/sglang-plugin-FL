@@ -5,10 +5,13 @@
 #     upgraded, downgraded, replaced, or removed. The resolver must only ADD
 #     the SGLang dependency closure. Any planned change to an existing
 #     distribution fails the build.
-#   * Hygon installs sglang[srt_empty]: the dependency-ownership-inversion
-#     extra. The DTK torch/FlagTree/FlagGems/FlagCX stack comes from the
-#     runtime, never from this build. No hand-added packages beyond the
-#     wheel's own closure.
+#   * Hygon installs sglang[srt_empty,runtime_common]: the dependency
+#     ownership-inversion extras. The DTK torch/FlagTree/FlagGems/FlagCX
+#     stack comes from the runtime, never from this build. runtime_common
+#     is the wheel's own extra that adds compressed-tensors (unpinned)
+#     beyond runtime_base, because sglang.srt's quantization registry
+#     imports compressed_tensors eagerly at server start while the wheel
+#     only declares it under runtime-common. No hand-picked packages.
 #   * No sglang-plugin-FL source in this image; CI installs the plugin from
 #     the PR checkout via the standard setup flow.
 #
@@ -159,7 +162,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
-             "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
+             "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty,runtime_common]"; then \
            dry_run_rc=0; break; \
          else \
            dry_run_rc="$?"; \
@@ -229,7 +232,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
-             "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
+             "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty,runtime_common]"; then \
            install_rc=0; break; \
          else \
            install_rc="$?"; \
