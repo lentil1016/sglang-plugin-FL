@@ -2,8 +2,6 @@
 name: Probe Hygon operations runtime
 
 on:
-  push:
-    branches: [ci/runtime-hygon-nvidia-probe]
   workflow_dispatch:
 
 permissions:
