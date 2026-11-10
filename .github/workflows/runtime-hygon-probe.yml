@@ -75,6 +75,8 @@ jobs:
           set +e
           "$PYTHON_BIN" -m pip install \
             --dry-run \
+            --timeout 120 \
+            --retries 20 \
             --report /probe/sglang-srt-empty-plan.json \
             --constraint /probe/runtime-constraints.txt \
             --index-url https://resource.flagos.net/repository/flagos-pypi-hygon/simple \
