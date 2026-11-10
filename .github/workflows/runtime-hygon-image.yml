@@ -29,8 +29,15 @@ jobs:
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
-            --username "$HARBOR_USERNAME" --password-stdin
+          # Transpacific TLS handshakes to the registry occasionally time out.
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+                 --username "$HARBOR_USERNAME" --password-stdin; then
+              break
+            fi
+            echo "harbor login attempt ${attempt} failed; retrying" >&2
+            sleep 15
+          done
 
       - name: Build and push the image
         run: |
