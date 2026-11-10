@@ -149,8 +149,9 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --extra-index-url "$PIP_EXTRA_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
            dry_run_rc=0; break; \
+         else \
+           dry_run_rc="$?"; \
          fi; \
-         dry_run_rc="$?"; \
          echo "dry-run attempt ${attempt} failed (rc=${dry_run_rc}); retrying" >&2; \
          sleep 20; \
        done \
@@ -217,8 +218,9 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --extra-index-url "$PIP_EXTRA_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
            install_rc=0; break; \
+         else \
+           install_rc="$?"; \
          fi; \
-         install_rc="$?"; \
          echo "install attempt ${attempt} failed (rc=${install_rc}); retrying" >&2; \
          sleep 20; \
        done \
