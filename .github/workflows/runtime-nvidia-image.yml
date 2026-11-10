@@ -1,0 +1,106 @@
+# Temporary image build workflow. Do not merge this workflow into the product branch.
+name: Build NVIDIA runtime CI image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
+  IMAGE_TAG: 0.5.18-nvidia-runtime-ci-20261110
+  CONTAINERFILE: docker/cuda/runtime-0.5.18.containerfile
+
+jobs:
+  build-push-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out the containerfile
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          sparse-checkout: |
+            docker/cuda/
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+
+      - name: Build and push the image
+        run: |
+          set -euo pipefail
+          export DOCKER_BUILDKIT=1
+          docker build \
+            -f "$CONTAINERFILE" \
+            -t "${IMAGE_REPO}:${IMAGE_TAG}" \
+            --provenance=false \
+            .
+          docker push "${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Record the immutable digest
+        run: |
+          set -euo pipefail
+          digest="$(docker buildx imagetools inspect \
+            "${IMAGE_REPO}:${IMAGE_TAG}" \
+            --format '{{.Manifest.Digest}}')"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "unexpected digest: $digest" >&2; exit 1 ;;
+          esac
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          {
+            echo "repo: ${IMAGE_REPO}"
+            echo "tag: ${IMAGE_TAG}"
+            echo "digest: ${digest}"
+          } > image-digest.txt
+          cat image-digest.txt
+
+      - name: Verify the pushed digest (static checks)
+        run: |
+          set -euo pipefail
+          image="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          docker pull "$image"
+          mkdir -p verify-output
+          docker run --rm -i \
+            -v "$PWD/verify-output:/verify" \
+            --entrypoint /bin/bash \
+            "$image" -s <<'EOF'
+          set -u
+          PYTHON_BIN="$(command -v python || command -v python3)"
+          "$PYTHON_BIN" -V
+          cp -a /opt/sglang-ci/. /verify/
+          "$PYTHON_BIN" - <<'PY'
+          import importlib.metadata as md
+          import json
+          import sglang
+
+          print("sglang", md.version("sglang"), "imported from", sglang.__file__)
+          before = json.load(open("/opt/sglang-ci/runtime-distributions-before.json"))
+          after = json.load(open("/opt/sglang-ci/runtime-distributions-after.json"))
+          drift = {n: (v, after.get(n)) for n, v in before.items() if after.get(n) != v}
+          print("runtime distributions:", len(before),
+                "| after install:", len(after),
+                "| drift:", drift or "none")
+          PY
+          EOF
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nvidia-runtime-image-verify
+          path: |
+            verify-output/
+            image-digest.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
