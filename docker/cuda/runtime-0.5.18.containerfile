@@ -34,6 +34,12 @@ ARG SGLANG_WHEEL_NAME=sglang-0.5.18-cp312-cp312-manylinux_2_34_x86_64.whl
 # pip's HTTP cache keeps whatever the previous attempt already fetched.
 ARG PIP_MAIN_INDEX=https://resource.flagos.net/repository/flagos-pypi-nvidia/simple
 ARG PIP_EXTRA_INDEX=https://resource.flagos.net/repository/pypi-proxy/simple
+# Last-resort index for very large closure wheels (sglang-kernel is 377 MB):
+# the flagos proxy serves them fine in-region but its gateway times out
+# delivering them over a transpacific link. Index priority order is kept,
+# so flagos builds still win for everything they carry; PyPI only fills
+# gaps with byte-identical artifacts (the proxy mirrors PyPI hashes).
+ARG PIP_FALLBACK_INDEX=https://pypi.org/simple
 
 WORKDIR /opt/sglang-ci
 
@@ -153,6 +159,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
+             --extra-index-url "$PIP_FALLBACK_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}"; then \
            dry_run_rc=0; break; \
          else \
@@ -222,6 +229,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
+             --extra-index-url "$PIP_FALLBACK_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}"; then \
            install_rc=0; break; \
          else \

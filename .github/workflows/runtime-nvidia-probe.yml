@@ -86,6 +86,7 @@ jobs:
               --constraint /probe/runtime-constraints.txt \
               --index-url https://resource.flagos.net/repository/flagos-pypi-nvidia/simple \
               --extra-index-url https://resource.flagos.net/repository/pypi-proxy/simple \
+              --extra-index-url https://pypi.org/simple \
               /probe/sglang-0.5.18-cp312-cp312-manylinux_2_34_x86_64.whl \
               > /probe/sglang-normal-dry-run.log 2>&1; then
               dry_run_rc=0
