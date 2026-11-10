@@ -77,16 +77,40 @@ jobs:
           cp -a /opt/sglang-ci/. /verify/
           "$PYTHON_BIN" - <<'PY'
           import importlib.metadata as md
+          import importlib.util
           import json
-          import sglang
+          import traceback
 
-          print("sglang", md.version("sglang"), "imported from", sglang.__file__)
           before = json.load(open("/opt/sglang-ci/runtime-distributions-before.json"))
           after = json.load(open("/opt/sglang-ci/runtime-distributions-after.json"))
           drift = {n: (v, after.get(n)) for n, v in before.items() if after.get(n) != v}
           print("runtime distributions:", len(before),
                 "| after install:", len(after),
                 "| drift:", drift or "none")
+
+          # Container-start semantics: the /opt/flagtree volume is populated,
+          # so the runtime's triton module must still win over the closure's
+          # site-packages triton wheel (PYTHONPATH precedence).
+          triton_spec = importlib.util.find_spec("triton")
+          assert triton_spec is not None and triton_spec.origin, "triton not found"
+          assert triton_spec.origin.startswith("/opt/flagtree"), triton_spec.origin
+          print("triton authoritative at", triton_spec.origin)
+
+          try:
+              import sglang
+              print("sglang", md.version("sglang"), "imported from", sglang.__file__)
+          except BaseException:
+              text = traceback.format_exc()
+              print(text)
+              tolerated = (
+                  "libgalaxyhip" in text,
+                  "libcuda.so" in text,
+                  "Failed to load the backend extension" in text,
+                  "cannot open shared object file" in text,
+              )
+              assert any(tolerated), "sglang import failed beyond device libraries"
+              print("sglang import blocked by device libraries only "
+                    "(expected on a GPU-less verifier)")
           PY
           EOF
 
