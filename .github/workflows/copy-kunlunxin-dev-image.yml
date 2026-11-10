@@ -2,6 +2,9 @@
 name: Copy Kunlunxin development image to flagos-dev
 
 on:
+  push:
+    branches:
+      - ci/copy-kunlunxin-dev-image
   workflow_dispatch:
 
 permissions:
