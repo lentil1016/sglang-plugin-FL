@@ -257,9 +257,16 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && "$PYTHON_BIN" - <<'PY'
 import importlib.metadata as md
 import json
+import os
 import sys
 from pathlib import Path
 from packaging.utils import canonicalize_name
+
+# Same container-start resolution mirroring as the baseline probe above:
+# the runtime's flagtree dist-info lives under /opt/flagtree, which is on
+# sys.path via PYTHONPATH at container start.
+if not os.environ.get("PYTHONPATH"):
+    sys.path.insert(0, "/opt/flagtree")
 
 evidence = Path("/opt/sglang-ci")
 before = json.loads((evidence / "runtime-distributions-before.json").read_text())
