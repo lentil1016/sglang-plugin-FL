@@ -28,6 +28,14 @@ ARG SGLANG_WHEEL_NAME=sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl
 # pip's HTTP cache keeps whatever the previous attempt already fetched.
 ARG PIP_MAIN_INDEX=https://resource.flagos.net/repository/flagos-pypi-hygon/simple
 ARG PIP_EXTRA_INDEX=https://resource.flagos.net/repository/pypi-proxy/simple
+# Last-resort index with two jobs: (a) very large closure wheels whose
+# delivery through the proxy times out on transpacific links, and (b)
+# versions newer than the proxy cache - the runtime ships fsspec 2026.9.0,
+# which every datasets release the proxy carries caps below (<=2026.7.0);
+# datasets 5.2.0 (pure-python wheel) is the first release allowing it.
+# Index priority order is kept, so flagos builds still win for everything
+# the platform index carries.
+ARG PIP_FALLBACK_INDEX=https://pypi.org/simple
 
 WORKDIR /opt/sglang-ci
 
@@ -147,6 +155,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
+             --extra-index-url "$PIP_FALLBACK_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
            dry_run_rc=0; break; \
          else \
@@ -216,6 +225,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
+             --extra-index-url "$PIP_FALLBACK_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty]"; then \
            install_rc=0; break; \
          else \
