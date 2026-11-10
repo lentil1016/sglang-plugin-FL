@@ -42,6 +42,12 @@ ARG PIP_EXTRA_INDEX=https://resource.flagos.net/repository/pypi-proxy/simple
 
 WORKDIR /opt/sglang-ci
 
+# Version lock for every SGLang closure addition (name==version), extracted
+# from the reviewed resolver run. Passed as an extra --constraint so resolver
+# drift across indexes cannot change the closure; the dry-run gate still
+# verifies zero runtime replacements on top of it.
+COPY docker/hygon/runtime-0.5.18.additions.lock /opt/sglang-ci/sglang-additions.lock
+
 # --- Stable, slow: fetch and SHA256-verify the SGLang wheel ------------------
 # Pure-Python downloader so the build depends only on the runtime's own Python.
 RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
@@ -121,6 +127,25 @@ with (evidence / "runtime-constraints.txt").open("w") as f:
     for name, version in sorted(packages.items()):
         f.write(f"{name}=={version}\n")
 
+import hashlib
+import sysconfig
+
+# File-level baseline for the runtime's site-packages: every file's SHA256.
+# The post-install gate requires every baseline file to still exist with the
+# identical hash, so an in-place overwrite by any closure wheel is caught
+# even when pip metadata (or an import origin) stays unchanged.
+purelib = Path(sysconfig.get_paths()["purelib"])
+manifest = {}
+for path in sorted(purelib.rglob("*")):
+    if path.is_file():
+        manifest[str(path.relative_to(purelib))] = hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+with (evidence / "site-files-before.sha256").open("w") as f:
+    for relative, digest in manifest.items():
+        f.write(f"{digest}  {relative}\n")
+print(f"site-packages baseline: {len(manifest)} files hashed under {purelib}")
+
 def probe_module(module):
     # find_spec resolves without executing the module: no device libraries
     # are touched, so the probe is meaningful on a GPU-less builder.
@@ -166,6 +191,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --cache-dir /tmp/pip-cache \
              --report /opt/sglang-ci/sglang-resolver-plan.json \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
+             --constraint /opt/sglang-ci/sglang-additions.lock \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
@@ -236,6 +262,7 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --retries 20 \
              --cache-dir /tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
+             --constraint /opt/sglang-ci/sglang-additions.lock \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
@@ -308,6 +335,42 @@ if removed:
     failed = True
     print("FATAL: runtime distributions removed: " + ", ".join(removed))
 sys.exit(1 if failed else 0)
+PY
+
+# 1b. File-level zero-drift: every baseline site-packages file must still
+#     exist with the identical SHA256 (catches in-place overwrites).
+RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
+    && "$PYTHON_BIN" - <<'PY'
+import hashlib
+import sysconfig
+import sys
+from pathlib import Path
+
+evidence = Path("/opt/sglang-ci")
+purelib = Path(sysconfig.get_paths()["purelib"])
+baseline = {}
+for line in (evidence / "site-files-before.sha256").read_text().splitlines():
+    digest, relative = line.split("  ", 1)
+    baseline[relative] = digest
+
+missing = []
+changed = []
+for relative, expected in baseline.items():
+    path = purelib / relative
+    if not path.is_file():
+        missing.append(relative)
+    elif hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        changed.append(relative)
+if missing or changed:
+    print(f"FATAL: site-packages baseline drifted: {len(missing)} missing, "
+          f"{len(changed)} content-changed")
+    for item in missing[:20]:
+        print(f"  - missing: {item}")
+    for item in changed[:20]:
+        print(f"  ! changed: {item}")
+    sys.exit(1)
+print(f"site-packages file baseline unchanged "
+      f"({len(baseline)} files re-hashed identical)")
 PY
 
 # 2. pip check: only violations NEW relative to the runtime baseline fail the
