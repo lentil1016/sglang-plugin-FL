@@ -30,15 +30,15 @@ ARG SGLANG_WHEEL_NAME=sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl
 # and pip does not retry HTTP 504; every pip call below loops instead, because
 # pip's HTTP cache keeps whatever the previous attempt already fetched.
 ARG PIP_MAIN_INDEX=https://resource.flagos.net/repository/flagos-pypi-hygon/simple
-ARG PIP_EXTRA_INDEX=https://resource.flagos.net/repository/pypi-proxy/simple
-# Last-resort index with two jobs: (a) very large closure wheels whose
-# delivery through the proxy times out on transpacific links, and (b)
-# versions newer than the proxy cache - the runtime ships fsspec 2026.9.0,
-# which every datasets release the proxy carries caps below (<=2026.7.0);
-# datasets 5.2.0 (pure-python wheel) is the first release allowing it.
-# Index priority order is kept, so flagos builds still win for everything
-# the platform index carries.
+# PyPI serves generic wheels at datacenter speed; the pypi-proxy mirrors
+# PyPI byte-for-byte but its gateway times out delivering large wheels on
+# transpacific links (sglang-kernel is 377 MB), so it stays the LAST index.
+# The platform index keeps first priority: flagos-built wheels (and the
+# fsspec-pin reality - the runtime ships 2026.9.0, which every datasets
+# release the proxy carries caps below; datasets 5.2.0 is the first
+# release allowing it) always win from flagos-pypi-hygon.
 ARG PIP_FALLBACK_INDEX=https://pypi.org/simple
+ARG PIP_EXTRA_INDEX=https://resource.flagos.net/repository/pypi-proxy/simple
 
 WORKDIR /opt/sglang-ci
 
@@ -167,8 +167,8 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --report /opt/sglang-ci/sglang-resolver-plan.json \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
-             --extra-index-url "$PIP_EXTRA_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
+             --extra-index-url "$PIP_EXTRA_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty,runtime_common]"; then \
            dry_run_rc=0; break; \
          else \
@@ -237,8 +237,8 @@ RUN --mount=type=cache,target=/tmp/pip-cache \
              --cache-dir /tmp/pip-cache \
              --constraint /opt/sglang-ci/runtime-constraints.txt \
              --index-url "$PIP_MAIN_INDEX" \
-             --extra-index-url "$PIP_EXTRA_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
+             --extra-index-url "$PIP_EXTRA_INDEX" \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}[srt_empty,runtime_common]"; then \
            install_rc=0; break; \
          else \
