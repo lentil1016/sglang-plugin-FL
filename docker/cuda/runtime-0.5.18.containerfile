@@ -99,8 +99,15 @@ import importlib.metadata as md
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 from packaging.utils import canonicalize_name
+
+# Mirror the runtime's container-start module resolution: PYTHONPATH
+# (/opt/flagtree) precedes site-packages there, while build RUN steps do not
+# inherit that ENV. Same position, same precedence as at container start.
+if not os.environ.get("PYTHONPATH"):
+    sys.path.insert(0, "/opt/flagtree")
 
 evidence = Path("/opt/sglang-ci")
 
@@ -325,8 +332,13 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && "$PYTHON_BIN" - <<'PY'
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
+
+# Same container-start resolution mirroring as the baseline probe above.
+if not os.environ.get("PYTHONPATH"):
+    sys.path.insert(0, "/opt/flagtree")
 
 evidence = Path("/opt/sglang-ci")
 
@@ -347,33 +359,20 @@ recorded = json.loads((evidence / "module-provenance-before.json").read_text())
 context = recorded.pop("_context")
 before = recorded
 
-failed = False
-for module in sorted(set(before) | set(after)):
-    if before.get(module) != after.get(module):
-        triton_volume_case = (
-            module == "triton"
-            and before[module] == {"found": False}
-            and after[module].get("found") is True
-            and "/site-packages/triton/__init__.py" in after[module]["origin"]
-            and context.get("flagtree_dir_present") is True
-            and context.get("flagtree_entries") == []
-            and "/opt/flagtree" in (context.get("pythonpath") or "").split(":")
-        )
-        if triton_volume_case:
-            print("NOTE: standalone triton wheel installed into site-packages "
-                  "by the SGLang closure; the runtime's authoritative triton "
-                  "resides in the /opt/flagtree volume and keeps precedence "
-                  "via PYTHONPATH at container start. CI job-time checks "
-                  "assert that resolution.")
-            continue
-        failed = True
-        print(f"FATAL: module {module} provenance changed: "
-              f"{before.get(module)} -> {after.get(module)}")
-if failed:
+changed = {
+    module: (before.get(module), after.get(module))
+    for module in sorted(set(before) | set(after))
+    if before.get(module) != after.get(module)
+}
+if changed:
+    print("FATAL: vendor module provenance changed across the install:")
+    for module, (was, now) in changed.items():
+        print(f"  ! {module}: {was} -> {now}")
     print("--- recorded build context ---")
     print(json.dumps(context, indent=2, sort_keys=True))
     sys.exit(1)
-print("module provenance unchanged (see NOTE lines for allowed transitions):")
+print("module provenance unchanged under container-start resolution order "
+      "(triton resolves via /opt/flagtree before site-packages):")
 print(json.dumps(after, indent=2, sort_keys=True))
 PY
 
