@@ -1,0 +1,150 @@
+# Temporary probe workflow. Do not merge this workflow into the product branch.
+name: Probe Hygon operations runtime
+
+on:
+  push:
+    branches: [ci/runtime-hygon-nvidia-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe-hygon-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUNTIME_IMAGE: harbor.baai.ac.cn/flagos-runtime/flagos-runtime-hygon-dtk26.04@sha256:03e598b348e58e7233628394bbefa0ccef26969a091c7e6f2f02835161757f8b
+      SGLANG_WHEEL_URL: https://resource.flagos.net/repository/flagos-pypi-hygon/packages/sglang/0.5.18+flagos/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl
+      SGLANG_WHEEL_SHA256: 1fe8a560353fd15aea7194869f1fd50e1fdbedd8fc1074db52b9a13028756800
+    steps:
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+
+      - name: Pull immutable operations runtime
+        run: docker pull "$RUNTIME_IMAGE"
+
+      - name: Download digest-pinned SGLang wheel
+        run: |
+          set -euo pipefail
+          mkdir -p probe-output
+          curl -fL --retry 3 "$SGLANG_WHEEL_URL" \
+            -o probe-output/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl
+          printf '%s  %s\n' "$SGLANG_WHEEL_SHA256" \
+            probe-output/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl \
+            | sha256sum -c -
+
+      - name: Record runtime inventory and resolver plan
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/probe-output:/probe" \
+            --entrypoint /bin/bash \
+            "$RUNTIME_IMAGE" -s <<'EOF'
+          set -u
+          PYTHON_BIN="$(command -v python || command -v python3)"
+          "$PYTHON_BIN" -V > /probe/python-version.txt 2>&1
+          "$PYTHON_BIN" -m pip --version > /probe/pip-version.txt 2>&1
+          "$PYTHON_BIN" -m pip list --format=json > /probe/runtime-packages.json
+          "$PYTHON_BIN" -m pip freeze --all | sort > /probe/runtime-freeze.txt
+          "$PYTHON_BIN" -m pip check > /probe/runtime-pip-check.txt 2>&1
+          printf '%s\n' "$?" > /probe/runtime-pip-check.exitcode
+
+          "$PYTHON_BIN" - <<'PY'
+          import importlib.metadata as md
+          import json
+          from packaging.utils import canonicalize_name
+
+          packages = {}
+          for dist in md.distributions():
+              name = dist.metadata.get("Name")
+              if not name:
+                  continue
+              packages[canonicalize_name(name)] = dist.version
+          with open("/probe/runtime-constraints.txt", "w", encoding="utf-8") as f:
+              for name, version in sorted(packages.items()):
+                  f.write(f"{name}=={version}\n")
+          with open("/probe/runtime-distributions.json", "w", encoding="utf-8") as f:
+              json.dump(packages, f, indent=2, sort_keys=True)
+          PY
+
+          set +e
+          "$PYTHON_BIN" -m pip install \
+            --dry-run \
+            --report /probe/sglang-srt-empty-plan.json \
+            --constraint /probe/runtime-constraints.txt \
+            --index-url https://resource.flagos.net/repository/flagos-pypi-hygon/simple \
+            --extra-index-url https://resource.flagos.net/repository/pypi-proxy/simple \
+            '/probe/sglang-0.5.18+flagos-cp310-cp310-linux_x86_64.whl[srt_empty]' \
+            > /probe/sglang-srt-empty-dry-run.log 2>&1
+          dry_run_rc="$?"
+          printf '%s\n' "$dry_run_rc" > /probe/sglang-srt-empty-dry-run.exitcode
+          set -e
+
+          "$PYTHON_BIN" - <<'PY'
+          import importlib.metadata as md
+          import json
+          from pathlib import Path
+          from packaging.utils import canonicalize_name
+
+          before = json.loads(Path("/probe/runtime-distributions.json").read_text())
+          report_path = Path("/probe/sglang-srt-empty-plan.json")
+          if not report_path.exists():
+              Path("/probe/sglang-srt-empty-summary.txt").write_text(
+                  "pip produced no resolver report; inspect dry-run log\n"
+              )
+              raise SystemExit(0)
+          report = json.loads(report_path.read_text())
+          additions = []
+          replacements = []
+          for item in report.get("install", []):
+              metadata = item.get("metadata", {})
+              name = canonicalize_name(metadata.get("name", ""))
+              version = metadata.get("version", "")
+              if name in before:
+                  replacements.append((name, before[name], version))
+              else:
+                  additions.append((name, version))
+          lines = ["ADDITIONS"]
+          lines.extend(f"{name}=={version}" for name, version in sorted(additions))
+          lines.append("")
+          lines.append("EXISTING DISTRIBUTIONS PLANNED FOR INSTALL/REPLACEMENT")
+          lines.extend(
+              f"{name}: runtime={old}, planned={new}"
+              for name, old, new in sorted(replacements)
+          )
+          Path("/probe/sglang-srt-empty-summary.txt").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8"
+          )
+          PY
+
+          cat /probe/python-version.txt
+          cat /probe/pip-version.txt
+          echo '=== runtime pip check ==='
+          cat /probe/runtime-pip-check.txt
+          echo '=== srt_empty dry-run exit code ==='
+          cat /probe/sglang-srt-empty-dry-run.exitcode
+          echo '=== resolver summary ==='
+          cat /probe/sglang-srt-empty-summary.txt
+          echo '=== resolver tail ==='
+          tail -100 /probe/sglang-srt-empty-dry-run.log
+          EOF
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hygon-runtime-package-probe
+          path: probe-output/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
