@@ -2,6 +2,9 @@
 name: Diagnose nvidia runtime triton layout
 
 on:
+  push:
+    branches: [ci/runtime-hygon-nvidia-probe]
+    paths: [.github/workflows/runtime-nvidia-triton-probe.yml]
   workflow_dispatch:
 
 permissions:
