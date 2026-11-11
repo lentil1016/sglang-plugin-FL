@@ -1,0 +1,99 @@
+# Temporary image build helper on the fork default branch. Do not merge into
+# the product repository.
+name: Build minimal T-Head runtime CI image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Fork branch containing the T-Head Containerfile"
+        required: true
+        default: "ci/thead-runtime-minimal-probe"
+      image_tag:
+        description: "Tag under flagos-dev/sglang-plugin-fl"
+        required: true
+        default: "0.5.18-thead-runtime-minimal-20261110"
+
+permissions:
+  contents: read
+
+jobs:
+  build-push-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out image source
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          repository: lentil1016/sglang-plugin-FL
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$HARBOR_USERNAME"
+          test -n "$HARBOR_PASSWORD"
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+                 --username "$HARBOR_USERNAME" --password-stdin; then
+              break
+            fi
+            test "$attempt" -lt 5
+            sleep 15
+          done
+
+      - name: Build and push image
+        env:
+          IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE_REPO}:${IMAGE_TAG}"
+          docker buildx use default
+          docker buildx inspect default --bootstrap
+          docker buildx build \
+            --builder default \
+            --file docker/thead/ci-runtime-0.5.18.containerfile \
+            --tag "$image" \
+            --cache-from "type=registry,ref=$image" \
+            --cache-to type=inline \
+            --push \
+            --provenance=false \
+            --metadata-file build-metadata.json \
+            .
+          digest="$(python3 -c "import json; print(json.load(open('build-metadata.json'))['containerimage.digest'])")"
+          case "$digest" in sha256:*) ;; *) exit 1 ;; esac
+          echo "IMAGE=${IMAGE_REPO}@${digest}" >> "$GITHUB_ENV"
+          printf '%s\n' "${IMAGE_REPO}@${digest}" | tee image-digest.txt
+
+      - name: Verify runtime preservation and added closure
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker run --rm --entrypoint /bin/bash "$IMAGE" -c '
+            set -euo pipefail
+            test -s /opt/runtime-distributions.before
+            test -s /opt/runtime-constraints.txt
+            test -s /opt/sglang-added-distributions.txt
+            cat /opt/sglang-added-distributions.txt
+            python -c "import importlib.metadata as m; assert m.version(\"sglang\") == \"0.5.18\""
+          '
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: thead-minimal-runtime-image
+          path: |
+            image-digest.txt
+            build-metadata.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
