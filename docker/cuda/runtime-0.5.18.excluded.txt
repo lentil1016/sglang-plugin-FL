@@ -1,0 +1,41 @@
+# Intentionally NOT installed (authorized deviation from the wheel's full
+# standard closure). Anything listed here may appear as an unsatisfied
+# `pip check` declaration; the runtime provides or nothing needs it at the
+# CI code paths the previous image already exercised green.
+#
+# - triton: FlagTree ships the complete triton tree at /opt/flagtree; a
+#   standalone pip triton produced split-module resolution and crashed
+#   every e2e kernel launch (SystemError, triton/backends/nvidia/driver.py).
+# - CUDA toolchain wheels (nvcc/nvvm/crt/cccl/nvdisasm/mathdx/cutlass-dsl*,
+#   cudnn-frontend, cuda-tile): only pulled by excluded kernel stacks.
+# - Kernel stacks (tilelang, humming-kernels, quack-kernels, sgl-deep-ep,
+#   sgl-deep-gemm, tokenspeed*, torch-memory-saver, torchcodec,
+#   torch-c-dlpack-ext, kernels, kernels-data, flash-attn-4): absent from
+#   the previous CI image; the pr-stage suite never loaded them.
+triton
+nvidia-cuda-nvcc
+nvidia-nvvm
+nvidia-cuda-crt
+nvidia-cuda-cccl
+nvidia-cuda-nvdisasm
+nvidia-mathdx
+nvidia-cutlass-dsl
+nvidia-cutlass-dsl-libs-base
+nvidia-cutlass-dsl-libs-core
+nvidia-cutlass-dsl-libs-cu12
+nvidia-cutlass-dsl-libs-cu13
+cuda-tile
+nvidia-cudnn-frontend
+tilelang
+humming-kernels
+quack-kernels
+sgl-deep-ep
+sgl-deep-gemm
+tokenspeed-mla
+tokenspeed-triton
+torch-memory-saver
+torchcodec
+torch-c-dlpack-ext
+kernels
+kernels-data
+flash-attn-4

@@ -52,6 +52,7 @@ WORKDIR /opt/sglang-ci
 # drift across indexes cannot change the closure; the dry-run gate still
 # verifies zero runtime replacements on top of it.
 COPY docker/cuda/runtime-0.5.18.install.lock /opt/sglang-ci/sglang-install.lock
+COPY docker/cuda/runtime-0.5.18.excluded.txt /opt/sglang-ci/sglang-excluded.txt
 
 # --- Stable, slow: fetch and SHA256-verify the SGLang wheel ------------------
 # Pure-Python downloader so the build depends only on the runtime's own Python.
@@ -341,11 +342,7 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-baseline.txt | sort -u > /tmp/pip-check-baseline.lines \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-after.txt | sort -u > /tmp/pip-check-after.lines \
     && comm -13 /tmp/pip-check-baseline.lines /tmp/pip-check-after.lines > /tmp/pip-check-raw-new.lines \
-    && grep -vE '^(xgrammar.*requires triton|flashinfer-python.*requires cuda-tile)' /tmp/pip-check-raw-new.lines > /opt/sglang-ci/pip-check-new-violations.txt \
-    && echo 'NOTE (authorized deviation): xgrammar declares a standalone triton' \
-         'dependency and flashinfer declares cuda-tile; both are intentionally' \
-         'not installed (FlagTree provides the complete triton tree via' \
-         '/opt/flagtree; the previous CI image shipped neither).' \
+    && "$PYTHON_BIN" -c 'import re,sys; from pathlib import Path; excluded=set(Path("/opt/sglang-ci/sglang-excluded.txt").read_text().split()) - {""} ; excluded.discard(""); raw=Path("/tmp/pip-check-raw-new.lines").read_text().splitlines(); unexpected=[l for l in raw if not (m:=re.search(r"requires ([^,]+), which is not installed", l)) or m.group(1).strip().lower().replace("_","-") not in excluded]; Path("/opt/sglang-ci/pip-check-new-violations.txt").write_text("\n".join(unexpected)+"\n"); print(f"pip check: {len(raw)} new declaration gaps, {len(unexpected)} unexpected")' \
     && if [ -s /opt/sglang-ci/pip-check-new-violations.txt ]; then \
          echo 'FATAL: new pip check violations introduced by the SGLang install:'; \
          cat /opt/sglang-ci/pip-check-new-violations.txt; \
