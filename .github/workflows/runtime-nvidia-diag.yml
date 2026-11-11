@@ -1,0 +1,61 @@
+# Temporary NVIDIA triton diagnostic. Do not merge into the product branch.
+name: Diagnose nvidia runtime triton layout
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:20b2b506cbd353a6b8f4d4c210cc8b4344f765c226f24c1318bc5deff31285c0
+    steps:
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+                 --username "$HARBOR_USERNAME" --password-stdin; then break; fi
+            sleep 15
+          done
+
+      - name: Inspect triton layout with and without the pip wheel
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker run --rm -i --entrypoint /bin/bash "$IMAGE" -s <<'EOF'
+          set -u
+          PY="$(command -v python || command -v python3)"
+          echo "=== image env ==="
+          echo "PYTHONPATH=$PYTHONPATH"
+          echo "=== /opt/flagtree tree (depth 2) ==="
+          find /opt/flagtree -maxdepth 2 | sort | head -40
+          echo "=== triton dists installed ==="
+          "$PY" -m pip list 2>/dev/null | grep -i 'triton\|flagtree' || true
+          probe() {
+            "$PY" - <<PY2
+import importlib.util as u
+for m in ("triton", "triton.compiler", "triton.backends", "triton.backends.nvidia", "triton.backends.nvidia.driver", "triton.runtime", "triton.runtime.jit"):
+    s = u.find_spec(m)
+    print(f"{m:32s} -> {s.origin if s and s.origin else None}")
+PY2
+          }
+          echo "=== resolution WITH pip triton installed (as shipped) ==="
+          probe
+          echo "=== uninstall pip triton, re-probe (simulates not shipping it) ==="
+          "$PY" -m pip uninstall -y triton
+          probe
+          echo "=== with pip triton uninstalled: bare import triton.compiler ==="
+          "$PY" -c "import triton, triton.compiler; print('flagtree-only compiler OK:', triton.__file__, triton.compiler.__file__)" || echo "FAILED: flagtree tree cannot provide triton.compiler alone"
+          EOF
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
