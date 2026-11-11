@@ -341,10 +341,11 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-baseline.txt | sort -u > /tmp/pip-check-baseline.lines \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-after.txt | sort -u > /tmp/pip-check-after.lines \
     && comm -13 /tmp/pip-check-baseline.lines /tmp/pip-check-after.lines > /tmp/pip-check-raw-new.lines \
-    && grep -v '^xgrammar.*requires triton' /tmp/pip-check-raw-new.lines > /opt/sglang-ci/pip-check-new-violations.txt \
+    && grep -vE '^(xgrammar.*requires triton|flashinfer-python.*requires cuda-tile)' /tmp/pip-check-raw-new.lines > /opt/sglang-ci/pip-check-new-violations.txt \
     && echo 'NOTE (authorized deviation): xgrammar declares a standalone triton' \
-         'dependency that is intentionally not installed; FlagTree provides the' \
-         'complete triton tree via /opt/flagtree.' \
+         'dependency and flashinfer declares cuda-tile; both are intentionally' \
+         'not installed (FlagTree provides the complete triton tree via' \
+         '/opt/flagtree; the previous CI image shipped neither).' \
     && if [ -s /opt/sglang-ci/pip-check-new-violations.txt ]; then \
          echo 'FATAL: new pip check violations introduced by the SGLang install:'; \
          cat /opt/sglang-ci/pip-check-new-violations.txt; \
