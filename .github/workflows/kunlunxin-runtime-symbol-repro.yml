@@ -12,7 +12,7 @@ permissions:
 jobs:
   reproduce:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Load exact runtime and reproduce extension import
         run: |
@@ -22,8 +22,18 @@ jobs:
               set -eux
               python -m pip install --no-deps \
                 "https://klx-public.bj.bcebos.com/v1/liquanfeng01/fl/deps/20260709/sglang_kernel-0.4.2.post2%2Bd4466f4499-cp39-abi3-linux_x86_64.whl#sha256=146d4b7a318ca7104e4152df94c3f56941006675717480f52ba3077ee5ed8315"
+              glog_path="$(find / -type f -name "libglog.so.0*" -print -quit 2>/dev/null || true)"
+              if [ -n "$glog_path" ]; then
+                export LD_LIBRARY_PATH="$(dirname "$glog_path"):${LD_LIBRARY_PATH:-}"
+              else
+                apt-get update
+                apt-get install -y --no-install-recommends libgoogle-glog0v6 \
+                  || apt-get install -y --no-install-recommends libgoogle-glog0v5 \
+                  || apt-get install -y --no-install-recommends libgoogle-glog0v6t64
+              fi
               export LD_LIBRARY_PATH="/flagos/lib/python3.10/site-packages/torch_xmlir:${LD_LIBRARY_PATH:-}"
               cat /flagos/lib/python3.10/site-packages/torch_xmlir/_versions.txt
+              ldd -r /flagos/lib/python3.10/site-packages/sgl_kernel/common_ops.cpython-310-x86_64-linux-gnu.so || true
               python - <<"PY"
           import torch
           print("torch:", torch.__version__)
