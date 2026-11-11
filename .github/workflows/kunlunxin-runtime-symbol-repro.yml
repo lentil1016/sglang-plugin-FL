@@ -1,0 +1,33 @@
+name: Kunlunxin runtime symbol reproduction
+
+on:
+  push:
+    branches:
+      - codex/kunlunxin-runtime-symbol-repro-20261111
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Load exact runtime and reproduce extension import
+        run: |
+          docker run --rm --platform linux/amd64 --entrypoint bash \
+            harbor.baai.ac.cn/flagos-runtime/flagos-runtime-kunlunxin-xre5.37.1@sha256:679182a04d187562a3e23bacb9d0eb876dabf09ac0c0a875c2b4a141b64cac69 \
+            -lc '
+              set -eux
+              python -m pip install --no-deps \
+                "https://klx-public.bj.bcebos.com/v1/liquanfeng01/fl/deps/20260709/sglang_kernel-0.4.2.post2%2Bd4466f4499-cp39-abi3-linux_x86_64.whl#sha256=146d4b7a318ca7104e4152df94c3f56941006675717480f52ba3077ee5ed8315"
+              export LD_LIBRARY_PATH="/flagos/lib/python3.10/site-packages/torch_xmlir:${LD_LIBRARY_PATH:-}"
+              cat /flagos/lib/python3.10/site-packages/torch_xmlir/_versions.txt
+              python - <<"PY"
+          import torch
+          print("torch:", torch.__version__)
+          from sgl_kernel import common_ops
+          print("common_ops imported:", common_ops.__file__)
+          PY
+            '
