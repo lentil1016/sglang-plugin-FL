@@ -43,12 +43,7 @@ jobs:
           echo "=== triton dists installed ==="
           "$PY" -m pip list 2>/dev/null | grep -i 'triton\|flagtree' || true
           probe() {
-            "$PY" - <<PY2
-import importlib.util as u
-for m in ("triton", "triton.compiler", "triton.backends", "triton.backends.nvidia", "triton.backends.nvidia.driver", "triton.runtime", "triton.runtime.jit"):
-    s = u.find_spec(m)
-    print(f"{m:32s} -> {s.origin if s and s.origin else None}")
-PY2
+            "$PY" -c 'import importlib.util as u; mods=("triton","triton.compiler","triton.backends","triton.backends.nvidia","triton.backends.nvidia.driver","triton.runtime","triton.runtime.jit"); [print(f"{m:34s} -> {(s := u.find_spec(m)).origin if s and s.origin else None}") for m in mods]'
           }
           echo "=== resolution WITH pip triton installed (as shipped) ==="
           probe
