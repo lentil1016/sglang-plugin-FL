@@ -5,12 +5,17 @@
 #     upgraded, downgraded, replaced, or removed. The resolver must only ADD
 #     the SGLang dependency closure. Any planned change to an existing
 #     distribution fails the build.
-#   * NVIDIA installs the normal sglang==0.5.18 wheel (NOT srt_empty) and its
-#     standard dependency closure. The closure adds CUDA-stack packages
-#     (flashinfer, sglang-kernel, ...); the runtime's own torch/CUDA/NCCL/
-#     FlagTree/FlagGems/FlagCX distributions are never touched. Unlike the
-#     legacy docker/cuda/containerfile, this build does not uninstall or
-#     replace Triton, FlagTree, FlagGems, torch, or CUDA components.
+#   * NVIDIA installs the normal sglang==0.5.18 wheel plus a version-locked
+#     minimal dependency set (authorized deviation from the wheel's full
+#     standard closure): the closure's standalone triton wheel and CUDA
+#     toolchain/kernel stacks are excluded, because the runtime's FlagTree
+#     ships a COMPLETE triton tree at /opt/flagtree (verified: without any
+#     pip triton, `import triton.compiler` resolves there) and the mixed
+#     FlagTree-top/pip-bottom triton crashes kernel launches (SystemError in
+#     triton/backends/nvidia/driver.py). This mirrors the configuration the
+#     previous CI image proved green: no standalone triton at all. The
+#     runtime's own torch/CUDA/NCCL/FlagTree/FlagGems/FlagCX distributions
+#     are never touched; nothing is uninstalled or replaced.
 #   * Known runtime baseline finding, kept on record and NOT caused by this
 #     install: `torch 2.13.0+cu130 requires triton, which is not installed`.
 #     The runtime provides the triton module out-of-band (invisible to pip);
@@ -46,7 +51,7 @@ WORKDIR /opt/sglang-ci
 # from the reviewed resolver run. Passed as an extra --constraint so resolver
 # drift across indexes cannot change the closure; the dry-run gate still
 # verifies zero runtime replacements on top of it.
-COPY docker/cuda/runtime-0.5.18.additions.lock /opt/sglang-ci/sglang-additions.lock
+COPY docker/cuda/runtime-0.5.18.install.lock /opt/sglang-ci/sglang-install.lock
 
 # --- Stable, slow: fetch and SHA256-verify the SGLang wheel ------------------
 # Pure-Python downloader so the build depends only on the runtime's own Python.
@@ -175,35 +180,13 @@ with (evidence / "module-provenance-before.json").open("w") as f:
 print(json.dumps(provenance, indent=2, sort_keys=True))
 PY
 
-# --- Resolver gate: dry-run with report before touching site-packages --------
-# Any runtime distribution in the install plan fails the build: a different
-# version is a hard conflict, an identical version is a reinstall that needs
-# explicit review. New (absent) distributions are the SGLang closure; they are
-# recorded for review but allowed.
-RUN --mount=type=cache,target=/tmp/pip-cache \
-    export PYTHON_BIN="$(command -v python || command -v python3)" \
-    && dry_run_rc=1 \
-    && for attempt in 1 2 3 4 5 6 7 8; do \
-         if "$PYTHON_BIN" -m pip install \
-             --dry-run \
-             --timeout 120 \
-             --retries 20 \
-             --cache-dir /tmp/pip-cache \
-             --report /opt/sglang-ci/sglang-resolver-plan.json \
-             --constraint /opt/sglang-ci/runtime-constraints.txt \
-             --constraint /opt/sglang-ci/sglang-additions.lock \
-             --index-url "$PIP_MAIN_INDEX" \
-             --extra-index-url "$PIP_FALLBACK_INDEX" \
-             --extra-index-url "$PIP_EXTRA_INDEX" \
-             "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}"; then \
-           dry_run_rc=0; break; \
-         else \
-           dry_run_rc="$?"; \
-         fi; \
-         echo "dry-run attempt ${attempt} failed (rc=${dry_run_rc}); retrying" >&2; \
-         sleep 20; \
-       done \
-    && [ "$dry_run_rc" -eq 0 ] \
+# --- Lock gate: the install list must not touch any runtime distribution --
+# Installing with --no-deps from a version-locked list (authorized deviation
+# from the wheel's standard closure: the closure's standalone triton and CUDA
+# toolchain wheels are excluded because the runtime's FlagTree triton tree is
+# complete and authoritative; see the PR description). This gate statically
+# proves the lock cannot replace a runtime distribution.
+RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && "$PYTHON_BIN" - <<'PY'
 import json
 import sys
@@ -212,60 +195,35 @@ from packaging.utils import canonicalize_name
 
 evidence = Path("/opt/sglang-ci")
 before = json.loads((evidence / "runtime-distributions-before.json").read_text())
-report = json.loads((evidence / "sglang-resolver-plan.json").read_text())
-
-additions, same_version, conflicts = [], [], []
-for item in report.get("install", []):
-    metadata = item.get("metadata", {})
-    name = canonicalize_name(metadata.get("name", ""))
-    version = metadata.get("version", "")
-    if name not in before:
-        additions.append((name, version))
-    elif version == before[name]:
-        same_version.append((name, version))
-    else:
-        conflicts.append((name, before[name], version))
-
-(evidence / "sglang-resolver-additions.txt").write_text(
-    "\n".join(f"{name}=={version}" for name, version in sorted(additions)) + "\n"
-)
-print(f"resolver plans {len(additions)} new distributions "
-      "(recorded in sglang-resolver-additions.txt)")
-for name, version in sorted(additions):
-    print(f"  + {name}=={version}")
-
-failed = False
-if same_version:
-    failed = True
-    print("FATAL: resolver plans to reinstall runtime distributions "
-          "(same version) - explicit review required:", flush=True)
-    for name, version in sorted(same_version):
-        print(f"  = {name}=={version}")
-if conflicts:
-    failed = True
-    print("FATAL: resolver plans to replace runtime distributions "
-          "with different versions:", flush=True)
-    for name, old, new in sorted(conflicts):
-        print(f"  ! {name}: runtime={old} planned={new}")
-if failed:
+lock = set()
+for line in (evidence / "sglang-install.lock").read_text().splitlines():
+    if line.strip():
+        lock.add(canonicalize_name(line.split("==")[0]))
+overlap = lock & set(before)
+if overlap:
+    print("FATAL: install lock overlaps runtime distributions: "
+          + ", ".join(sorted(overlap)))
     sys.exit(1)
+print(f"install lock: {len(lock)} packages, zero overlap with the "
+      f"{len(before)} runtime distributions")
 PY
 
-# --- Stable, slow: the real install ------------------------------------------
-# Same constraints and indexes as the reviewed dry-run plan.
+# --- Stable, slow: the locked install ---------------------------------------
+# --no-deps against exact pins: no resolution, deterministic regardless of
+# index state. The sglang wheel comes from the SHA256-verified local file.
 RUN --mount=type=cache,target=/tmp/pip-cache \
     export PYTHON_BIN="$(command -v python || command -v python3)" \
     && install_rc=1 \
     && for attempt in 1 2 3 4 5 6 7 8; do \
          if "$PYTHON_BIN" -m pip install \
+             --no-deps \
              --timeout 120 \
              --retries 20 \
              --cache-dir /tmp/pip-cache \
-             --constraint /opt/sglang-ci/runtime-constraints.txt \
-             --constraint /opt/sglang-ci/sglang-additions.lock \
              --index-url "$PIP_MAIN_INDEX" \
              --extra-index-url "$PIP_FALLBACK_INDEX" \
              --extra-index-url "$PIP_EXTRA_INDEX" \
+             -r /opt/sglang-ci/sglang-install.lock \
              "/opt/sglang-ci/wheels/${SGLANG_WHEEL_NAME}"; then \
            install_rc=0; break; \
          else \
@@ -314,9 +272,11 @@ failed = False
 (evidence / "sglang-additions-installed.txt").write_text(
     "\n".join(f"{name}=={after[name]}" for name in added) + "\n"
 )
-planned = set(
-    (evidence / "sglang-resolver-additions.txt").read_text().split()
-)
+planned = {
+    f"{canonicalize_name(line.split('==')[0])}=={line.split('==', 1)[1]}"
+    for line in (evidence / "sglang-install.lock").read_text().splitlines()
+    if line.strip()
+} | {f"sglang=={after.get('sglang', '')}"}
 installed = set(f"{name}=={after[name]}" for name in added)
 print(f"{len(added)} distributions added; runtime baseline size {len(before)}")
 if installed != planned:
@@ -380,13 +340,17 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
          printf '%s\n' "$?" > /opt/sglang-ci/runtime-pip-check-after.exitcode; true; } \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-baseline.txt | sort -u > /tmp/pip-check-baseline.lines \
     && grep -v '^No broken requirements found\.$' /opt/sglang-ci/runtime-pip-check-after.txt | sort -u > /tmp/pip-check-after.lines \
-    && comm -13 /tmp/pip-check-baseline.lines /tmp/pip-check-after.lines > /opt/sglang-ci/pip-check-new-violations.txt \
+    && comm -13 /tmp/pip-check-baseline.lines /tmp/pip-check-after.lines > /tmp/pip-check-raw-new.lines \
+    && grep -v '^xgrammar.*requires triton' /tmp/pip-check-raw-new.lines > /opt/sglang-ci/pip-check-new-violations.txt \
+    && echo 'NOTE (authorized deviation): xgrammar declares a standalone triton' \
+         'dependency that is intentionally not installed; FlagTree provides the' \
+         'complete triton tree via /opt/flagtree.' \
     && if [ -s /opt/sglang-ci/pip-check-new-violations.txt ]; then \
          echo 'FATAL: new pip check violations introduced by the SGLang install:'; \
          cat /opt/sglang-ci/pip-check-new-violations.txt; \
          exit 1; \
        fi \
-    && echo 'pip check: no new violations (baseline preserved)'
+    && echo 'pip check: no unexpected new violations (baseline preserved)'
 
 # 3. Module provenance: every vendor module must still resolve to the exact
 #    same origin. One narrow, loudly-reported exception: the SGLang closure
