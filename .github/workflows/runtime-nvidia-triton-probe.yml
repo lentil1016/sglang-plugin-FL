@@ -43,7 +43,7 @@ jobs:
           echo "=== triton dists installed ==="
           "$PY" -m pip list 2>/dev/null | grep -i 'triton\|flagtree' || true
           probe() {
-            "$PY" -c 'import importlib.util as u; mods=("triton","triton.compiler","triton.backends","triton.backends.nvidia","triton.backends.nvidia.driver","triton.runtime","triton.runtime.jit"); [print(f"{m:34s} -> {(s := u.find_spec(m)).origin if s and s.origin else None}") for m in mods]'
+            "$PY" -c 'import importlib.util as u; mods=("triton","triton.compiler","triton.backends","triton.backends.nvidia","triton.backends.nvidia.driver","triton.runtime","triton.runtime.jit"); [print(f"{m:34s} -> {(u.find_spec(m).origin if u.find_spec(m) is not None and u.find_spec(m).origin is not None else None)}") for m in mods]'
           }
           echo "=== resolution WITH pip triton installed (as shipped) ==="
           probe
@@ -51,7 +51,7 @@ jobs:
           "$PY" -m pip uninstall -y triton
           probe
           echo "=== with pip triton uninstalled: bare import triton.compiler ==="
-          "$PY" -c "import triton, triton.compiler; print('flagtree-only compiler OK:', triton.__file__, triton.compiler.__file__)" || echo "FAILED: flagtree tree cannot provide triton.compiler alone"
+          TORCH_DEVICE_BACKEND_AUTOLOAD=0 "$PY" -c "import triton, triton.compiler; print('flagtree-only compiler OK:', triton.__file__, triton.compiler.__file__)" || echo "FAILED: flagtree tree cannot provide triton.compiler alone"
           EOF
 
       - name: Log out of Harbor
