@@ -369,8 +369,11 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
        'class _StubLoader(importlib.abc.Loader):' \
        '    def create_module(self, spec):' \
        '        module = importlib.util.module_from_spec(spec)' \
-       '        module.__getattr__ = lambda attr, _n=spec.name: _unavailable(' \
-       '            f"{_n}.{attr}")() if not attr.startswith("__") else None' \
+       '        def _ga(attr, _n=spec.name):' \
+       '            if attr.startswith("__"):' \
+       '                return None' \
+       '            return _unavailable(f"{_n}.{attr}")' \
+       '        module.__getattr__ = _ga' \
        '        return module' \
        '' \
        '    def exec_module(self, module):' \
@@ -387,11 +390,12 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
        > "$PURELIB/_hcu_kernel_stub_finder.py" \
     && printf '%s\n' 'import _hcu_kernel_stub_finder' \
        > "$PURELIB/zz-hcu-kernel-stub-hook.pth" \
-    && "$PYTHON_BIN" -c 'import sgl_kernel, sgl_kernel.utils, flashinfer; \
-         import sgl_kernel.kvcacheio, flashinfer.sampling; \
+    && "$PYTHON_BIN" -c 'from sgl_kernel.kvcacheio import save_kv_cache; \
+         from flashinfer.sampling import top_k_renorm_prob; \
+         import sgl_kernel, sgl_kernel.utils, flashinfer; \
          assert sgl_kernel.utils.is_arch_support_pdl() is False; \
          try: \
-             sgl_kernel.kvcacheio.load_kv_cache() \
+             save_kv_cache() \
          except RuntimeError as e: \
              assert "stub" in str(e); \
          print("kernel-wheel import stubs + submodule finder installed")'
