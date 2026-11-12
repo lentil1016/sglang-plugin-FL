@@ -64,7 +64,7 @@ jobs:
           echo "base image: $base"
           mkdir -p inspect-output
           docker pull "$base"
-          docker run --rm --entrypoint /bin/bash "$base" -s <<'EOF' | tee inspect-output/base-inventory.txt
+          docker run --rm -i --entrypoint /bin/bash "$base" -s <<'EOF' | tee inspect-output/base-inventory.txt
           set -uo pipefail
           echo "=== which python/pip ==="
           which python python3 pip pip3 || true
@@ -122,21 +122,56 @@ jobs:
           except Exception as e:
               print("triton import failed:", repr(e))
           PY
-          echo "=== torch / torchvision / torchaudio imports (no device) ==="
+          echo "=== torch / torchvision / torchaudio import matrix (no device) ==="
           python - <<'PY'
-          for mod in ("torch", "torchvision", "torchaudio"):
-              try:
-                  m = __import__(mod)
-                  print(mod + ":", getattr(m, "__version__", "?"))
-              except Exception as e:
-                  print(mod + " import failed:", repr(e))
+          import os, subprocess, sys, traceback
+          combos = {
+              "bare": {},
+              "pyp": {"PYTHONPATH": "/opt/flagtree"},
+              "accl": {"LD_LIBRARY_PATH": "/opt/accl-p"},
+              "both": {"PYTHONPATH": "/opt/flagtree",
+                       "LD_LIBRARY_PATH": "/opt/accl-p"},
+          }
+          for name, extra in combos.items():
+              env = dict(os.environ)
+              if "LD_LIBRARY_PATH" in extra:
+                  env["LD_LIBRARY_PATH"] = extra["LD_LIBRARY_PATH"] + ":" + env.get("LD_LIBRARY_PATH", "")
+              env.update({k: v for k, v in extra.items() if k != "LD_LIBRARY_PATH"})
+              for mod in ("torch", "torchvision", "torchaudio"):
+                  code = f"import {mod}; print('{mod}', getattr(__import__('{mod}'), '__version__', '?'))"
+                  r = subprocess.run([sys.executable, "-c", code],
+                                     env=env, capture_output=True, text=True)
+                  if r.returncode == 0:
+                      print(f"combo {name}: {r.stdout.strip()}")
+                  else:
+                      last = r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "?"
+                      print(f"combo {name}: {mod} import FAILED: {last}")
+          ok = []
+          for name, extra in combos.items():
+              env = dict(os.environ)
+              env.update(extra)
+              r = subprocess.run([sys.executable, "-c", "import torchvision"],
+                                 env=env, capture_output=True, text=True)
+              if r.returncode == 0:
+                  ok.append(name)
+          if not ok:
+              print("VENDOR_TORCHVISION_IMPORT_BROKEN_IN_BASE (all combos failed)")
+          else:
+              print("VENDOR_TORCHVISION_IMPORT_OK_WITH:", ",".join(ok))
           PY
           echo "=== /opt and /flagos layout ==="
           ls /opt || true
           ls /flagos 2>/dev/null || echo "no /flagos"
           ls /opt/flagtree 2>/dev/null | head -12 || echo "no /opt/flagtree"
           ls /usr/local/PPU_SDK 2>/dev/null || echo "no /usr/local/PPU_SDK"
+          echo "=== inspect done ==="
           EOF
+          test -s inspect-output/base-inventory.txt
+          grep -q "base image vendor contract: OK" inspect-output/base-inventory.txt
+          if grep -q "VENDOR_TORCHVISION_IMPORT_BROKEN_IN_BASE" inspect-output/base-inventory.txt; then
+            echo "::error::vendor torchvision cannot be imported in the base image on a device-less runner; see base-inventory.txt"
+            exit 1
+          fi
         env:
           BASE_IMAGE: ${{ inputs.base_image }}
           CONTAINERFILE: ${{ inputs.containerfile }}
