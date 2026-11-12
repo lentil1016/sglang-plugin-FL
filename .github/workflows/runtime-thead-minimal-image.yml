@@ -85,11 +85,34 @@ jobs:
           for d in md.distributions():
               name = d.metadata.get("Name")
               if name:
-                  prev = seen.setdefault(name.lower(), (name, d.version))
+                  norm = name.lower().replace("_", "-")
+                  prev = seen.setdefault(norm, (name, d.version))
                   if prev[1] != d.version:
                       print("DUPLICATE:", name, prev[1], d.version)
           for k in sorted(seen):
               print(f"{seen[k][0]}=={seen[k][1]}")
+          # Contract from the handoff (build-infra PR #1738, issue #1730):
+          # fail before building if the runtime contents drift from the
+          # documented vendor stack.
+          expected = {
+              "torch": "2.10.0+v0.1.0.ppu2.1.1",
+              "torchvision": "0.25.0+v0.1.0.ppu2.1.1",
+              "torchaudio": "2.10.0+v0.1.0.ppu2.1.1",
+              "flagtree": "0.7.0+ppu3.6",
+              "flag-gems": "5.4.0",
+              "numpy": "1.26.4",
+          }
+          missing = []
+          wrong = []
+          for norm, want in expected.items():
+              if norm not in seen:
+                  missing.append(f"{norm} (want {want})")
+              elif seen[norm][1] != want:
+                  wrong.append(f"{norm}: {seen[norm][1]} (want {want})")
+          if missing or wrong:
+              raise SystemExit("base image contract violated: "
+                               + "; ".join(missing + wrong))
+          print("base image vendor contract: OK")
           PY
           echo "=== triton module resolution (bare) ==="
           python - <<'PY'
