@@ -43,15 +43,17 @@ jobs:
           set -u
           PY="$(command -v python || command -v python3)"
           "$PY" -m pip install --no-deps pytest==9.1.1 pytest-timeout==2.4.0 iniconfig==2.3.1 pluggy==1.7.0 -q
-          BASELINE="$("$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
+          export TORCH_DEVICE_BACKEND_AUTOLOAD=0
+          BASELINE="$(TORCH_DEVICE_BACKEND_AUTOLOAD=0 "$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
           echo "BASELINE (nothing uninstalled): $BASELINE"
           for pkg in triton flash-attn-4 humming-kernels tilelang cuda-tile quack-kernels sgl-deep-ep sgl-deep-gemm tokenspeed-mla tokenspeed-triton torch-memory-saver torchcodec torch-c-dlpack-ext kernels kernels-data nvidia-cuda-cccl nvidia-cuda-crt nvidia-cuda-nvcc nvidia-cuda-nvdisasm nvidia-cudnn-frontend nvidia-cutlass-dsl nvidia-cutlass-dsl-libs-base nvidia-cutlass-dsl-libs-core nvidia-cutlass-dsl-libs-cu12 nvidia-cutlass-dsl-libs-cu13 nvidia-mathdx nvidia-nvvm; do
             "$PY" -m pip uninstall -y "$pkg" >/dev/null 2>&1 || true
-            RESULT="$("$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
+            RESULT="$(TORCH_DEVICE_BACKEND_AUTOLOAD=0 "$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
             echo "AFTER-UNINSTALL $pkg => $RESULT"
-            case "$RESULT" in
-              *"failed"*|*"error"*|*"Error"*) echo "!!! CULPRIT: $pkg"; break ;;
-            esac
+            if [ "$RESULT" != "$BASELINE" ]; then
+              echo "!!! CULPRIT: $pkg (baseline: $BASELINE / after: $RESULT)"
+              break
+            fi
           done
           EOF
 
