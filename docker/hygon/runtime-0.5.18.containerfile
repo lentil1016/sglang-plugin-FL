@@ -538,14 +538,18 @@ PY
 #    device libraries (libgalaxyhip / libcuda / torch device backends), so
 #    those failures are recorded and tolerated; any other failure - notably
 #    a missing pure-Python dependency of the closure - fails the build.
+# With the loader path baked in above, a GPU-less builder can now load the
+# DTK libraries and may abort (SIGABRT, rc=134) inside HIP device init
+# before Python can classify the failure, so the verdict comes from log
+# sentinels instead of the exit code.
 RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
-    && "$PYTHON_BIN" - <<'PY'
+    && "$PYTHON_BIN" - <<'PY' > /tmp/sglang-import-smoke.log 2>&1 || true
 import importlib.metadata as md
 import traceback
 
 try:
     import sglang
-    print("sglang", md.version("sglang"), "imported from", sglang.__file__)
+    print("SMOKE-PASS sglang", md.version("sglang"), "imported from", sglang.__file__)
 except BaseException:  # noqa: BLE001 - classify below
     text = traceback.format_exc()
     print(text)
@@ -559,6 +563,9 @@ except BaseException:  # noqa: BLE001 - classify below
         raise SystemExit(
             "sglang import failed for reasons other than missing device libraries"
         )
-    print("sglang import blocked by device libraries only "
+    print("SMOKE-TOLERATED sglang import blocked by device libraries only "
           "(expected on a GPU-less builder)")
 PY
+RUN cat /tmp/sglang-import-smoke.log \
+    && grep -qE "SMOKE-PASS|SMOKE-TOLERATED|no ROCm-capable device is detected" \
+       /tmp/sglang-import-smoke.log
