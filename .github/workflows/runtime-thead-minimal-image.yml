@@ -36,7 +36,7 @@ permissions:
 jobs:
   build-push-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 720
     steps:
       - name: Check out image source
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
