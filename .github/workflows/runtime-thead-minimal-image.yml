@@ -237,7 +237,7 @@ jobs:
             IMAGE="$IMAGE_DIGEST_INPUT"
           fi
           docker pull "$IMAGE"
-          docker run --rm --entrypoint /bin/bash "$IMAGE" -s <<'VERIFYEOF'
+          docker run --rm -i --entrypoint /bin/bash "$IMAGE" -s <<'VERIFYEOF'
           set -euo pipefail
           test -s /opt/runtime-distributions.before
           test "$(wc -l < /opt/runtime-distributions.before)" -ge 20
