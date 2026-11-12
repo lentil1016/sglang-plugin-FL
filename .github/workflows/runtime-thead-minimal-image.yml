@@ -225,10 +225,17 @@ jobs:
           docker run --rm --entrypoint /bin/bash "$IMAGE" -c '
             set -euo pipefail
             test -s /opt/runtime-distributions.before
-            test -s /opt/runtime-constraints.txt
             test -s /opt/sglang-added-distributions.txt
+            test "$(wc -l < /opt/runtime-distributions.before)" -ge 20
+            grep -q "^torch==2.10.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
+            grep -q "^torchvision==0.25.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
+            grep -q "^flagtree==0.7.0+ppu3.6$" /opt/runtime-distributions.before
+            echo "=== added closure ==="
             cat /opt/sglang-added-distributions.txt
-            python -c "import importlib.metadata as m; assert m.version(\"sglang\") == \"0.5.18\""
+            echo "=== runtime stack preserved ==="
+            cat /opt/runtime-distributions.before
+            python -c "import importlib.metadata as m; assert m.version(\"sglang\") == \"0.5.18\"; assert m.version(\"compressed-tensors\") == \"0.15.0\"; assert m.version(\"xgrammar\") == \"0.2.1\""
+            python -c "import torch, triton; print(\"torch\", torch.__version__, \"| triton from\", triton.__file__)"
           '
 
       - name: Upload build evidence
