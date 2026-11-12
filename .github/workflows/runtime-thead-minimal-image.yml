@@ -21,6 +21,14 @@ on:
         description: "BASE_IMAGE build-arg override (empty = containerfile default)"
         required: false
         default: ""
+      verify_only:
+        description: "Skip inspect/build and only verify image_digest"
+        required: false
+        default: false
+      image_digest:
+        description: "Image digest (repo@sha256:...) for verify_only mode"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -55,6 +63,7 @@ jobs:
           done
 
       - name: Inspect base image inventory
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           base="${BASE_IMAGE:-}"
@@ -188,6 +197,7 @@ jobs:
           CONTAINERFILE: ${{ inputs.containerfile }}
 
       - name: Build and push image
+        if: ${{ !inputs.verify_only }}
         env:
           IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
           IMAGE_TAG: ${{ inputs.image_tag }}
@@ -219,24 +229,86 @@ jobs:
           printf '%s\n' "${IMAGE_REPO}@${digest}" | tee image-digest.txt
 
       - name: Verify runtime preservation and added closure
+        env:
+          IMAGE_DIGEST_INPUT: ${{ inputs.image_digest }}
         run: |
           set -euo pipefail
+          if [ -n "$IMAGE_DIGEST_INPUT" ]; then
+            IMAGE="$IMAGE_DIGEST_INPUT"
+          fi
           docker pull "$IMAGE"
-          docker run --rm --entrypoint /bin/bash "$IMAGE" -c '
-            set -euo pipefail
-            test -s /opt/runtime-distributions.before
-            test -s /opt/sglang-added-distributions.txt
-            test "$(wc -l < /opt/runtime-distributions.before)" -ge 20
-            grep -q "^torch==2.10.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
-            grep -q "^torchvision==0.25.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
-            grep -q "^flagtree==0.7.0+ppu3.6$" /opt/runtime-distributions.before
-            echo "=== added closure ==="
-            cat /opt/sglang-added-distributions.txt
-            echo "=== runtime stack preserved ==="
-            cat /opt/runtime-distributions.before
-            python -c "import importlib.metadata as m; assert m.version(\"sglang\") == \"0.5.18\"; assert m.version(\"compressed-tensors\") == \"0.15.0\"; assert m.version(\"xgrammar\") == \"0.2.1\""
-            python -c "import torch, triton; print(\"torch\", torch.__version__, \"| triton from\", triton.__file__)"
-          '
+          docker run --rm --entrypoint /bin/bash "$IMAGE" -s <<'VERIFYEOF'
+          set -euo pipefail
+          test -s /opt/runtime-distributions.before
+          test "$(wc -l < /opt/runtime-distributions.before)" -ge 20
+          grep -q "^torch==2.10.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
+          grep -q "^torchvision==0.25.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
+          grep -q "^torchaudio==2.10.0+v0.1.0.ppu2.1.1$" /opt/runtime-distributions.before
+          grep -q "^flagtree==0.7.0+ppu3.6$" /opt/runtime-distributions.before
+          grep -q "^flag_gems==5.4.0$" /opt/runtime-distributions.before
+          grep -q "^numpy==1.26.4$" /opt/runtime-distributions.before
+          python - <<'PY'
+          import importlib.metadata as m
+          from pathlib import Path
+
+          def norm(name):
+              return name.lower().replace("_", "-")
+
+          before = {}
+          for l in Path("/opt/runtime-distributions.before").read_text().splitlines():
+              if l and not l.startswith("#"):
+                  name, version = l.split("==", 1)
+                  before[norm(name)] = version
+          after = {}
+          for d in m.distributions():
+              name = d.metadata.get("Name")
+              if name:
+                  after.setdefault(norm(name), (name, d.version))
+          drift = [f"{before[k]} -> {after.get(k, ('REMOVED',))[1]}"
+                   for k in before if after.get(k, (None, None))[1] != before[k]]
+          if drift:
+              raise SystemExit("runtime distribution drift:\n" + "\n".join(drift))
+          if "triton" in after and "triton" not in before:
+              raise SystemExit("standalone triton distribution present")
+          allowed = {}
+          for path in ("/opt/empty-0.5.18.additions.lock",
+                       "/opt/added-distributions.txt"):
+              p = Path(path)
+              if p.exists():
+                  for l in p.read_text().splitlines():
+                      if l and not l.startswith("#"):
+                          name, version = l.split("==", 1)
+                          allowed[norm(name)] = version
+          added = {k: after[k][1] for k in set(after) - set(before)}
+          uncovered = [f"{after[k][0]}=={v}" for k, v in sorted(added.items())
+                       if allowed.get(k) != v]
+          if uncovered:
+              raise SystemExit("distributions outside lock+ledger:\n"
+                               + "\n".join(uncovered))
+          print(f"runtime distributions preserved: {len(before)} (zero drift)")
+          print(f"additions covered by lock+ledger: {len(added)}")
+          print("upgrade/downgrade/replaced/removed: 0/0/0/0")
+          import subprocess
+          check = subprocess.run(["python", "-m", "pip", "check"],
+                                 capture_output=True, text=True)
+          allowed_violation = "xgrammar 0.2.1 requires triton, which is not installed."
+          violations = [l for l in (check.stdout + check.stderr).splitlines()
+                        if l.strip() and l.strip() != allowed_violation]
+          if violations:
+              raise SystemExit("unexpected pip check violations:\n" + "\n".join(violations))
+          print("pip check: clean except the reviewed xgrammar/triton metadata exception")
+          assert m.version("sglang") == "0.5.18"
+          assert m.version("compressed-tensors") == "0.15.0"
+          assert m.version("xgrammar") == "0.2.1"
+          assert m.version("loguru") == "0.7.3"
+          assert m.version("torchvision") == "0.25.0+v0.1.0.ppu2.1.1"
+          assert m.version("torchaudio") == "2.10.0+v0.1.0.ppu2.1.1"
+          import torch, xgrammar, loguru, triton
+          print("torch", torch.__version__, "| triton from", triton.__file__)
+          print("vendor vision/audio import on this device-less runner is "
+                "expected to fail and is validated on PPU hardware")
+          PY
+          VERIFYEOF
 
       - name: Upload build evidence
         if: always()
