@@ -1,0 +1,60 @@
+# Temporary bisect job: find which excluded package breaks the thead unit
+# tests' sglang import. Do not merge into the product branch.
+name: Bisect nvidia excluded package
+
+on:
+  push:
+    branches: [ci/runtime-hygon-nvidia-probe]
+    paths: [.github/workflows/runtime-nvidia-bisect.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bisect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      IMAGE: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:20b2b506cbd353a6b8f4d4c210cc8b4344f765c226f24c1318bc5deff31285c0
+    steps:
+      - name: Check out tests
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+                 --username "$HARBOR_USERNAME" --password-stdin; then break; fi
+            sleep 15
+          done
+
+      - name: Bisect which uninstall breaks the thead unit tests
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker run --rm -i \
+            -v "$PWD:/repo" -w /repo \
+            --entrypoint /bin/bash "$IMAGE" -s <<'EOF'
+          set -u
+          PY="$(command -v python || command -v python3)"
+          "$PY" -m pip install --no-deps pytest==9.1.1 pytest-timeout==2.4.0 iniconfig==2.3.1 pluggy==1.7.0 -q
+          BASELINE="$("$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
+          echo "BASELINE (nothing uninstalled): $BASELINE"
+          for pkg in triton flash-attn-4 humming-kernels tilelang cuda-tile quack-kernels sgl-deep-ep sgl-deep-gemm tokenspeed-mla tokenspeed-triton torch-memory-saver torchcodec torch-c-dlpack-ext kernels kernels-data nvidia-cuda-cccl nvidia-cuda-crt nvidia-cuda-nvcc nvidia-cuda-nvdisasm nvidia-cudnn-frontend nvidia-cutlass-dsl nvidia-cutlass-dsl-libs-base nvidia-cutlass-dsl-libs-core nvidia-cutlass-dsl-libs-cu12 nvidia-cutlass-dsl-libs-cu13 nvidia-mathdx nvidia-nvvm; do
+            "$PY" -m pip uninstall -y "$pkg" >/dev/null 2>&1 || true
+            RESULT="$("$PY" -m pytest tests/unit_tests/dispatch/test_cuda_compat_vendors.py -x -q 2>&1 | tail -1)"
+            echo "AFTER-UNINSTALL $pkg => $RESULT"
+            case "$RESULT" in
+              *"failed"*|*"error"*|*"Error"*) echo "!!! CULPRIT: $pkg"; break ;;
+            esac
+          done
+          EOF
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
