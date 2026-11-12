@@ -296,6 +296,10 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
          sglang/srt/layers/quantization/quark/schemes/quark_w4a4_mxfp4.py \
          sglang/srt/layers/quantization/quark/schemes/quark_w4a4_mxfp4_moe.py \
          sglang/srt/layers/quantization/quark_int4fp8_moe.py \
+         sglang/srt/layers/attention/triton_backend.py \
+         sglang/srt/layers/activation.py \
+         sglang/srt/layers/layernorm.py \
+         sglang/srt/layers/sampler.py \
     && sha256sum /opt/sglang-ci/sglang-v0.5.18-hcu.patch \
          > /opt/sglang-ci/sglang-hcu-patch.sha256
 

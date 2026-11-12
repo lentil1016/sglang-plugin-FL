@@ -19,7 +19,7 @@ permissions:
 
 env:
   IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
-  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261111-appfix
+  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261112-appfix2
   CONTAINERFILE: docker/hygon/runtime-0.5.18.containerfile
 
 jobs:
@@ -237,6 +237,18 @@ jobs:
               ),
               "sglang/srt/layers/quantization/quark_int4fp8_moe.py": (
                   "if _is_hip and not _is_hcu:"
+              ),
+              "sglang/srt/layers/attention/triton_backend.py": (
+                  "if _is_cuda and not _is_hcu:"
+              ),
+              "sglang/srt/layers/activation.py": (
+                  "alias the sgl fallbacks to the Triton"
+              ),
+              "sglang/srt/layers/layernorm.py": (
+                  "HCU ships no sgl_kernel wheel"
+              ),
+              "sglang/srt/layers/sampler.py": (
+                  "HCU ships neither flashinfer nor sgl_kernel"
               ),
           }
           for relative, marker in expected.items():
