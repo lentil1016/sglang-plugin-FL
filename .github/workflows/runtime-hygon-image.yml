@@ -42,25 +42,148 @@ jobs:
             --provenance=false \
             .
 
-      # Cross-ocean blob uploads to harbor can stall indefinitely (observed
-      # 5h45m with zero completed layers while base layers already existed in
-      # the target repo). A stalled push never exits on its own, so bound each
-      # attempt; docker push resumes at layer granularity on retry.
-      - name: Push (stall-resilient)
+      # Fast path: plain docker push. Cross-ocean large-blob uploads stall
+      # indefinitely (observed: a ~600MB layer made zero progress in 6x45min
+      # bounded attempts while every other layer crossed in minutes), and a
+      # stalled push never exits on its own, so bound it. On failure fall back
+      # to chunked registry upload below.
+      - name: Push (fast path, bounded)
+        id: fast_push
         run: |
           set -euo pipefail
-          attempt=1
-          until timeout 45m docker push "${IMAGE_REPO}:${IMAGE_TAG}"; do
+          if timeout 20m docker push "${IMAGE_REPO}:${IMAGE_TAG}"; then
+            echo "pushed=fast" >> "$GITHUB_OUTPUT"
+          else
             rc=$?
-            if [ "$attempt" -ge 6 ]; then
-              echo "push failed after $attempt attempts (last rc=$rc)" >&2
-              exit 1
-            fi
-            echo "push attempt $attempt ended (rc=$rc); retrying in 60s" >&2
-            attempt=$((attempt+1))
-            sleep 60
+            echo "fast-path push did not finish in 20m (rc=$rc); using chunked fallback" >&2
+            echo "pushed=chunked" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fallback: docker pushes the image to a LOCAL registry (seconds), then
+      # a python uploader moves each missing blob to harbor in 16MB PATCH
+      # chunks - each chunk has its own timeout and retries, so an idle
+      # cross-ocean connection only loses one chunk instead of the whole
+      # monolithic upload. The manifest bytes are PUT verbatim from the local
+      # registry, so the pushed digest is exactly what docker push would have
+      # produced.
+      - name: Push (chunked fallback)
+        if: steps.fast_push.outputs.pushed == 'chunked'
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          docker run -d --name localreg -p 5000:5000 registry:2
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:5000/v2/ >/dev/null 2>&1 && break
+            sleep 2
           done
-          echo "push completed on attempt $attempt"
+          LOCAL_NAME="localhost:5000/${IMAGE_REPO#*/}"
+          docker tag "${IMAGE_REPO}:${IMAGE_TAG}" "$LOCAL_NAME:${IMAGE_TAG}"
+          docker push "$LOCAL_NAME:${IMAGE_TAG}"
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+
+          HARBOR = "https://harbor.baai.ac.cn"
+          LOCAL = "http://localhost:5000"
+          name = os.environ["IMAGE_REPO"].split("/", 1)[1]
+          tag = os.environ["IMAGE_TAG"]
+          token = base64.b64encode(
+              f'{os.environ["HARBOR_USERNAME"]}:{os.environ["HARBOR_PASSWORD"]}'.encode()
+          ).decode()
+
+          def req(url, method="GET", data=None, headers=None, timeout=240):
+              h = {"Authorization": f"Basic {token}", **(headers or {})}
+              r = urllib.request.Request(url, data=data, headers=h, method=method)
+              return urllib.request.urlopen(r, timeout=timeout)
+
+          def harbor_path(path):
+              return path if path.startswith("http") else HARBOR + path
+
+          accept = ", ".join([
+              "application/vnd.docker.distribution.manifest.v2+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+              "application/vnd.oci.image.manifest.v1+json",
+              "application/vnd.oci.image.index.v1+json",
+          ])
+          with req(f"{LOCAL}/v2/{name}/manifests/{tag}", headers={"Accept": accept}) as r:
+              manifest_bytes = r.read()
+              manifest_digest = r.headers.get("Docker-Content-Digest")
+              manifest_type = r.headers.get("Content-Type")
+          print(f"manifest: {manifest_digest} ({manifest_type})")
+
+          m = json.loads(manifest_bytes)
+          blobs = [l["digest"] for l in m.get("layers", [])] + [m.get("config", {}).get("digest") if isinstance(m.get("config"), dict) else m.get("config")]
+
+          deadline = time.time() + 165 * 60
+          chunk = 16 << 20
+          for digest in blobs:
+              digest = digest.removeprefix("sha256:")
+              try:
+                  with req(harbor_path(f"/v2/{name}/blobs/sha256:{digest}"), method="HEAD") as r:
+                      if r.status == 200:
+                          print(f"blob sha256:{digest[:12]} exists, skip")
+                          continue
+              except urllib.error.HTTPError as e:
+                  if e.code != 404:
+                      raise
+              with req(f"{LOCAL}/v2/{name}/blobs/sha256:{digest}") as r:
+                  blob = r.read()
+              size = len(blob)
+              t0 = time.time()
+              print(f"blob sha256:{digest[:12]}: {size/1e6:.1f} MB to upload")
+              for attempt in range(3):
+                  try:
+                      with req(harbor_path(f"/v2/{name}/blobs/uploads/"), method="POST") as r:
+                          location = r.headers["Location"]
+                      sent = 0
+                      while sent < size:
+                          if time.time() > deadline:
+                              raise SystemExit("chunked upload deadline exceeded")
+                          end = min(sent + chunk, size)
+                          piece = blob[sent:end]
+                          h = {
+                              "Content-Length": str(len(piece)),
+                              "Content-Range": f"{sent}-{end - 1}",
+                              "Content-Type": "application/octet-stream",
+                          }
+                          ct0 = time.time()
+                          with req(harbor_path(location), method="PATCH", data=piece, headers=h) as r:
+                              location = r.headers.get("Location", location)
+                          rate = len(piece) / max(time.time() - ct0, 1e-3)
+                          print(f"  chunk {sent//(1<<20)}-{end//(1<<20)}MB "
+                                f"({rate/1e6:.2f} MB/s)", flush=True)
+                          sent = end
+                      put_url = harbor_path(location)
+                      sep = "&" if "?" in put_url else "?"
+                      with req(f"{put_url}{sep}digest=sha256:{digest}", method="PUT") as r:
+                          assert r.status in (201, 202), f"unexpected PUT status {r.status}"
+                      dt = time.time() - t0
+                      print(f"blob sha256:{digest[:12]}: done "
+                            f"({size/1e6:.1f} MB in {dt:.0f}s = {size/dt/1e6:.2f} MB/s)")
+                      break
+                  except Exception as e:
+                      print(f"  attempt {attempt + 1} failed: {e!r}; restarting blob", flush=True)
+              else:
+                  raise SystemExit(f"blob sha256:{digest[:12]} failed after 3 attempts")
+
+          put = req(
+              harbor_path(f"/v2/{name}/manifests/{tag}"),
+              method="PUT",
+              data=manifest_bytes,
+              headers={"Content-Type": manifest_type},
+          )
+          with put:
+              assert put.status == 201, f"manifest PUT status {put.status}"
+          print(f"manifest PUT ok: {manifest_digest}")
+          PY
+          docker rm -f localreg
 
       - name: Record immutable digest
         run: |
