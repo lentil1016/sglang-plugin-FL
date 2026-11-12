@@ -1,0 +1,85 @@
+name: Probe Hygon Runtime Torch backend autoload
+
+on:
+  push:
+    branches:
+      - probe/hygon-runtime-autoload-20261111
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Exact Runtime digest A/B import
+    runs-on: [self-hosted, ci-sglang-plugin-fl-hygon]
+    timeout-minutes: 20
+    steps:
+      - name: Pull exact Runtime and compare Torch imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='harbor.baai.ac.cn/flagos-runtime/flagos-runtime-hygon-dtk26.04@sha256:03e598b348e58e7233628394bbefa0ccef26969a091c7e6f2f02835161757f8b'
+
+          for attempt in 1 2 3; do
+            if docker pull "$image"; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            sleep 10
+          done
+
+          docker run --rm \
+            --ipc=host \
+            --device /dev/kfd \
+            --device /dev/mkfd \
+            --device /dev/dri \
+            --group-add video \
+            -v /opt/hyhal:/opt/hyhal:ro \
+            -v /usr/local/hyhal:/usr/local/hyhal:ro \
+            --entrypoint bash "$image" -lc '
+              set +e
+
+              python - <<"PY"
+          from importlib import metadata
+
+          print("Installed Torch backend entry points:", flush=True)
+          for ep in metadata.entry_points(group="torch.backends"):
+              dist = getattr(ep, "dist", None)
+              name = dist.metadata.get("Name") if dist is not None else None
+              owner = (
+                  f"{name}=={dist.version}"
+                  if dist is not None
+                  else "unknown distribution"
+              )
+              print(f"  {ep.name} = {ep.value} ({owner})", flush=True)
+          PY
+              inventory_rc=$?
+
+              echo "=== default/autoload-enabled import ==="
+              env -u TORCH_DEVICE_BACKEND_AUTOLOAD python - <<"PY"
+          import os
+          import torch
+          print("autoload env:", os.getenv("TORCH_DEVICE_BACKEND_AUTOLOAD"), flush=True)
+          print("torch:", torch.__version__, flush=True)
+          print("hcu:", getattr(torch, "__hcu_version__", None), flush=True)
+          print("available:", torch.cuda.is_available(), flush=True)
+          PY
+              default_rc=$?
+
+              echo "=== autoload-disabled import ==="
+              TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - <<"PY"
+          import os
+          import torch
+          print("autoload env:", os.getenv("TORCH_DEVICE_BACKEND_AUTOLOAD"), flush=True)
+          print("torch:", torch.__version__, flush=True)
+          print("hcu:", getattr(torch, "__hcu_version__", None), flush=True)
+          print("available:", torch.cuda.is_available(), flush=True)
+          PY
+              disabled_rc=$?
+
+              printf "RESULT inventory_rc=%s default_rc=%s disabled_rc=%s\n" \
+                "$inventory_rc" "$default_rc" "$disabled_rc"
+              exit 0
+            '
