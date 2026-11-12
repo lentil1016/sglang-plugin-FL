@@ -11,7 +11,7 @@ permissions:
 jobs:
   probe:
     name: Exact Runtime digest A/B import
-    runs-on: [self-hosted, ci-sglang-plugin-fl-hygon]
+    runs-on: ci-sglang-plugin-fl-hygon
     timeout-minutes: 20
     steps:
       - name: Pull exact Runtime and compare Torch imports
