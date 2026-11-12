@@ -357,6 +357,7 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
        'import importlib.abc' \
        'import importlib.util' \
        'import sys' \
+       'import types' \
        '' \
        '_STUB_ROOTS = ("sgl_kernel", "flashinfer")' \
        '' \
@@ -367,8 +368,11 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
        '    return _raise' \
        '' \
        'class _StubLoader(importlib.abc.Loader):' \
+       '    # ModuleType directly: module_from_spec would re-enter this' \
+       '    # create_module and recurse.' \
        '    def create_module(self, spec):' \
-       '        module = importlib.util.module_from_spec(spec)' \
+       '        module = types.ModuleType(spec.name)' \
+       '        module.__path__ = []' \
        '        def _ga(attr, _n=spec.name):' \
        '            if attr.startswith("__"):' \
        '                return None' \
