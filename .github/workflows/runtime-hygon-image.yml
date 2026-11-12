@@ -355,6 +355,23 @@ jobs:
           EOF
           done
 
+      - name: Native loader probe (image ENV sufficiency)
+        run: |
+          set -euo pipefail
+          echo "=== image config ENV ==="
+          docker inspect "$FINAL_IMAGE" --format '{{json .Config.Env}}' | tr ',' '\n' | grep -E "LD_|PATH" || true
+          echo "=== CDLL probe in-container ==="
+          docker run --rm --entrypoint python "$FINAL_IMAGE" - <<'PY'
+          import ctypes
+          import os
+          print("LD_LIBRARY_PATH:", os.environ.get("LD_LIBRARY_PATH", "<unset>"))
+          try:
+              ctypes.CDLL("libgalaxyhip.so.5")
+              print("CDLL libgalaxyhip.so.5: OK")
+          except OSError as e:
+              print("CDLL libgalaxyhip.so.5 FAILED:", e)
+          PY
+
       - name: Application metadata checks (hosted subset)
         run: |
           set -euo pipefail
