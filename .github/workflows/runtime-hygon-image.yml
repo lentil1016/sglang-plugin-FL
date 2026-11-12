@@ -3,6 +3,16 @@ name: Build Hygon application-fixed runtime CI image
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "build = full build+push+verify; verify = post-hoc verification only"
+        required: false
+        default: build
+        type: string
+      image:
+        description: "Full final image ref with digest (verify mode only)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -14,6 +24,7 @@ env:
 
 jobs:
   build-push-verify:
+    if: inputs.mode != 'verify'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -256,6 +267,140 @@ jobs:
           path: |
             verify-output/
             image-digest.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
+
+  # Post-hoc verification of an already-pushed image: file-level zero-drift
+  # against the operations runtime base plus application metadata checks
+  # (aiter absence, triton distribution identity). Hardware-dependent checks
+  # live in the temporary flagos-ai hardware-evidence PR.
+  verify-image:
+    if: inputs.mode == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      FINAL_IMAGE: ${{ inputs.image }}
+      BASE_IMAGE: harbor.baai.ac.cn/flagos-runtime/flagos-runtime-hygon-dtk26.04@sha256:03e598b348e58e7233628394bbefa0ccef26969a091c7e6f2f02835161757f8b
+    steps:
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+
+      - name: Hash BASE and FINAL trees
+        run: |
+          set -euo pipefail
+          docker pull "$BASE_IMAGE"
+          docker pull "$FINAL_IMAGE"
+          mkdir -p drift/base drift/final
+          for side in base final; do
+            if [ "$side" = base ]; then IMG="$BASE_IMAGE"; else IMG="$FINAL_IMAGE"; fi
+            docker run --rm -i -v "$PWD/drift/$side:/out" --entrypoint /bin/bash \
+              "$IMG" -s <<'EOF'
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import sysconfig
+          from pathlib import Path
+
+          def hash_tree(root):
+              out = {}
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file() or p.is_symlink():
+                      continue
+                  if "__pycache__" in p.parts or p.suffix == ".pyc":
+                      continue
+                  h = hashlib.sha256()
+                  with p.open("rb") as f:
+                      for chunk in iter(lambda: f.read(1 << 20), b""):
+                          h.update(chunk)
+                  out[str(p.relative_to(root))] = h.hexdigest()
+              return out
+
+          pure = Path(sysconfig.get_paths()["purelib"])
+          plat = Path(sysconfig.get_paths()["platlib"])
+          trees = {"purelib": pure}
+          if plat != pure:
+              trees["platlib"] = plat
+          if Path("/opt/flagtree").is_dir():
+              trees["opt_flagtree"] = Path("/opt/flagtree")
+          result = {}
+          for name, root in trees.items():
+              files = hash_tree(root)
+              result[name] = {"root": str(root), "files": files}
+              print(f"{name}: {len(files)} files hashed")
+          Path("/out/trees.json").write_text(json.dumps(result))
+          PY
+          EOF
+          done
+
+      - name: Application metadata checks (hosted subset)
+        run: |
+          set -euo pipefail
+          docker run --rm -i --entrypoint /bin/bash "$FINAL_IMAGE" -s <<'EOF'
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.metadata as md
+          names = sorted({(d.metadata["Name"] or "").lower() for d in md.distributions()})
+          aiter_like = [n for n in names if "aiter" in n]
+          print("distributions total:", len(names))
+          print("aiter-like distributions:", aiter_like)
+          assert not aiter_like, f"aiter distributions present: {aiter_like}"
+          try:
+              print("triton distribution version:", md.version("triton"))
+          except md.PackageNotFoundError:
+              print("triton distribution version: <none>")
+          print("sglang:", md.version("sglang"))
+          PY
+          EOF
+
+      - name: Compare trees (zero drift on BASE-present files)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          base = json.loads(Path("drift/base/trees.json").read_text())
+          final = json.loads(Path("drift/final/trees.json").read_text())
+          assert set(base) == set(final), f"tree roots differ: {set(base) ^ set(final)}"
+          total_changed, total_missing, total_added = [], [], []
+          for tree in sorted(base):
+              b = base[tree]["files"]
+              f = final[tree]["files"]
+              changed = sorted(p for p in b if p in f and b[p] != f[p])
+              missing = sorted(p for p in b if p not in f)
+              added = sorted(p for p in f if p not in b)
+              print(f"[{tree}] base={len(b)} final={len(f)} "
+                    f"changed={len(changed)} missing={len(missing)} added={len(added)}")
+              for p in changed[:20]:
+                  print(f"  CHANGED {tree}/{p}")
+              for p in missing[:20]:
+                  print(f"  MISSING {tree}/{p}")
+              total_changed += [f"{tree}/{p}" for p in changed]
+              total_missing += [f"{tree}/{p}" for p in missing]
+              total_added += [f"{tree}/{p}" for p in added]
+          Path("drift/added-files.txt").write_text("\n".join(total_added))
+          if total_changed or total_missing:
+              raise SystemExit(f"FILE DRIFT: {len(total_changed)} changed, {len(total_missing)} missing")
+          print(f"ZERO FILE DRIFT on base-present files; {len(total_added)} added files")
+          PY
+
+      - name: Upload drift evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hygon-file-drift
+          path: drift/
           if-no-files-found: warn
           retention-days: 7
 
