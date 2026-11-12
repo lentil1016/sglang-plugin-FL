@@ -357,6 +357,14 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
 # expectation; a stub has no version, so skip the probe (iluvatar precedent).
 ENV SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK=1
 
+# The base runtime ships the DTK userspace under /opt/dtk but leaves the
+# loader path to the deployment environment; runner hosts differ in whether
+# they inject LD_LIBRARY_PATH (observed: identical containers import torch on
+# one host and fail with "libgalaxyhip.so.5: cannot open shared object file"
+# on another).  The paths are image-internal (plus the hyhal bind mounts), so
+# baking them here makes the image self-sufficient and host-independent.
+ENV LD_LIBRARY_PATH=/opt/dtk/dcc/gcvm/lib:/opt/dtk/hip/lib:/opt/dtk/llvm/lib:/opt/dtk/lib:/opt/dtk/lib64:/opt/hyhal/lib:/opt/hyhal/lib64:/opt/dtk/dushmem/lib:/opt/dtk/opencl/lib:/opt/dtk/.hyhal/rocm_smi/lib:/opt/dtk/.hyhal/lib:/opt/dtk/.hyhal/lib64
+
 # --- Volatile verification (cheap layers, tuned without re-downloading) ------
 # 1. Every runtime distribution survives with the exact same version and the
 #    installed additions match the reviewed resolver plan.
