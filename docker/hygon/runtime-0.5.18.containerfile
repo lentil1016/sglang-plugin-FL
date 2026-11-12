@@ -390,15 +390,24 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
        > "$PURELIB/_hcu_kernel_stub_finder.py" \
     && printf '%s\n' 'import _hcu_kernel_stub_finder' \
        > "$PURELIB/zz-hcu-kernel-stub-hook.pth" \
-    && "$PYTHON_BIN" -c 'from sgl_kernel.kvcacheio import save_kv_cache; \
-         from flashinfer.sampling import top_k_renorm_prob; \
-         import sgl_kernel, sgl_kernel.utils, flashinfer; \
-         assert sgl_kernel.utils.is_arch_support_pdl() is False; \
-         try: \
-             save_kv_cache() \
-         except RuntimeError as e: \
-             assert "stub" in str(e); \
-         print("kernel-wheel import stubs + submodule finder installed")'
+    && echo "stub files written"
+
+RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
+    && "$PYTHON_BIN" - <<'PY'
+from sgl_kernel.kvcacheio import save_kv_cache
+from flashinfer.sampling import top_k_renorm_prob
+
+import sgl_kernel
+import sgl_kernel.utils
+import flashinfer
+
+assert sgl_kernel.utils.is_arch_support_pdl() is False
+try:
+    save_kv_cache()
+except RuntimeError as e:
+    assert "stub" in str(e)
+print("kernel-wheel import stubs + submodule finder installed")
+PY
 
 # The engine compares the installed sgl_kernel wheel version against its
 # expectation; a stub has no version, so skip the probe (iluvatar precedent).
