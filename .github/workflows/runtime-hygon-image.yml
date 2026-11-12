@@ -32,7 +32,7 @@ jobs:
           printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
             --username "$HARBOR_USERNAME" --password-stdin
 
-      - name: Build and push
+      - name: Build
         run: |
           set -euo pipefail
           export DOCKER_BUILDKIT=1
@@ -41,7 +41,26 @@ jobs:
             -t "${IMAGE_REPO}:${IMAGE_TAG}" \
             --provenance=false \
             .
-          docker push "${IMAGE_REPO}:${IMAGE_TAG}"
+
+      # Cross-ocean blob uploads to harbor can stall indefinitely (observed
+      # 5h45m with zero completed layers while base layers already existed in
+      # the target repo). A stalled push never exits on its own, so bound each
+      # attempt; docker push resumes at layer granularity on retry.
+      - name: Push (stall-resilient)
+        run: |
+          set -euo pipefail
+          attempt=1
+          until timeout 45m docker push "${IMAGE_REPO}:${IMAGE_TAG}"; do
+            rc=$?
+            if [ "$attempt" -ge 6 ]; then
+              echo "push failed after $attempt attempts (last rc=$rc)" >&2
+              exit 1
+            fi
+            echo "push attempt $attempt ended (rc=$rc); retrying in 60s" >&2
+            attempt=$((attempt+1))
+            sleep 60
+          done
+          echo "push completed on attempt $attempt"
 
       - name: Record immutable digest
         run: |
