@@ -19,7 +19,7 @@ permissions:
 
 env:
   IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
-  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261112-appfix4
+  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261112-appfix5
   CONTAINERFILE: docker/hygon/runtime-0.5.18.containerfile
 
 jobs:
