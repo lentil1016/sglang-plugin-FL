@@ -1,0 +1,104 @@
+# Temporary probe workflow. Do not merge this into any product branch.
+name: Inspect thead runtime image 163faf04
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+      - name: Pull and inspect runtime
+        run: |
+          set -euo pipefail
+          image=harbor.baai.ac.cn/flagos-runtime/flagos-runtime-thead-ppu2.1.0@sha256:163faf04cac90612954f32b0f45eef90223708fd3de0408497570ee4fd3b408d
+          docker pull "$image"
+          mkdir -p inspect-output
+          docker run --rm --entrypoint /bin/bash "$image" -s <<'EOF' | tee inspect-output/inventory.txt
+          set -uo pipefail
+          echo "=== which python/pip ==="
+          which python python3 pip pip3 || true
+          echo "=== python layout ==="
+          python - <<'PY'
+          import sys, sysconfig
+          print("executable:", sys.executable)
+          print("version:", sys.version)
+          print("purelib:", sysconfig.get_paths()["purelib"])
+          print("sys.path:")
+          for p in sys.path:
+              print("  ", p)
+          PY
+          echo "=== full distribution inventory ==="
+          python - <<'PY'
+          import importlib.metadata as md
+          seen = {}
+          for d in md.distributions():
+              name = d.metadata.get("Name")
+              if name:
+                  prev = seen.setdefault(name.lower(), (name, d.version))
+                  if prev[1] != d.version:
+                      print("DUPLICATE:", name, prev[1], d.version)
+          for k in sorted(seen):
+              print(f"{seen[k][0]}=={seen[k][1]}")
+          PY
+          echo "=== triton module resolution (bare) ==="
+          python - <<'PY'
+          try:
+              import triton
+              print("triton:", triton.__file__)
+          except Exception as e:
+              print("triton import failed:", repr(e))
+          PY
+          echo "=== triton module resolution (PYTHONPATH=/opt/flagtree) ==="
+          PYTHONPATH=/opt/flagtree python - <<'PY'
+          try:
+              import triton
+              print("triton:", triton.__file__)
+          except Exception as e:
+              print("triton import failed:", repr(e))
+          PY
+          echo "=== torch / torchvision imports (no device) ==="
+          python - <<'PY'
+          try:
+              import torch
+              print("torch:", torch.__version__)
+          except Exception as e:
+              print("torch import failed:", repr(e))
+          try:
+              import torchvision
+              from torchvision.io import decode_jpeg
+              print("torchvision:", torchvision.__version__, "decode_jpeg:", decode_jpeg is not None)
+          except Exception as e:
+              print("torchvision import failed:", repr(e))
+          try:
+              import torchaudio
+              print("torchaudio:", torchaudio.__version__)
+          except Exception as e:
+              print("torchaudio import failed:", repr(e))
+          PY
+          echo "=== /opt and /flagos layout ==="
+          ls /opt || true
+          ls /flagos 2>/dev/null || echo "no /flagos"
+          ls /opt/flagtree 2>/dev/null | head -12 || echo "no /opt/flagtree"
+          ls /usr/local/PPU_SDK 2>/dev/null || echo "no /usr/local/PPU_SDK"
+          EOF
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: thead-runtime-inventory
+          path: inspect-output/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
