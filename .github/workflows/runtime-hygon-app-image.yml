@@ -1,0 +1,122 @@
+# Temporary image build workflow. Do not merge this workflow into the product branch.
+name: Build Hygon application-fixed runtime CI image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
+  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261111-appfix
+  CONTAINERFILE: docker/hygon/runtime-0.5.18.containerfile
+
+jobs:
+  build-push-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out image inputs
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          sparse-checkout: |
+            docker/hygon/
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
+            --username "$HARBOR_USERNAME" --password-stdin
+
+      - name: Build and push
+        run: |
+          set -euo pipefail
+          export DOCKER_BUILDKIT=1
+          docker build \
+            -f "$CONTAINERFILE" \
+            -t "${IMAGE_REPO}:${IMAGE_TAG}" \
+            --provenance=false \
+            .
+          docker push "${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Record immutable digest
+        run: |
+          set -euo pipefail
+          digest="$(docker buildx imagetools inspect \
+            "${IMAGE_REPO}:${IMAGE_TAG}" \
+            --format '{{.Manifest.Digest}}')"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "unexpected digest: $digest" >&2; exit 1 ;;
+          esac
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          printf 'image=%s@%s\n' "$IMAGE_REPO" "$digest" | tee image-digest.txt
+
+      - name: Verify application patch and Runtime preservation
+        run: |
+          set -euo pipefail
+          image="${IMAGE_REPO}@${IMAGE_DIGEST}"
+          docker pull "$image"
+          mkdir -p verify-output
+          docker run --rm -i \
+            -v "$PWD/verify-output:/verify" \
+            --entrypoint /bin/bash \
+            "$image" -s <<'EOF'
+          set -euo pipefail
+          cp -a /opt/sglang-ci/. /verify/
+          python - <<'PY'
+          import importlib.metadata as md
+          import json
+          import sysconfig
+          from pathlib import Path
+
+          root = Path(sysconfig.get_paths()["purelib"])
+          expected = {
+              "sglang/srt/layers/quantization/quark/schemes/quark_w4a4_mxfp4.py": (
+                  "if _is_hip and not _is_hcu:"
+              ),
+              "sglang/srt/layers/quantization/quark/schemes/quark_w4a4_mxfp4_moe.py": (
+                  "_use_aiter = get_bool_env_var(\"SGLANG_USE_AITER\") and _is_hip and not _is_hcu"
+              ),
+              "sglang/srt/layers/quantization/quark_int4fp8_moe.py": (
+                  "if _is_hip and not _is_hcu:"
+              ),
+          }
+          for relative, marker in expected.items():
+              source = (root / relative).read_text(encoding="utf-8")
+              if marker not in source:
+                  raise SystemExit(f"HCU application patch marker missing: {relative}")
+              compile(source, relative, "exec")
+              print("patched:", relative)
+
+          before = json.loads(Path("/opt/sglang-ci/runtime-distributions-before.json").read_text())
+          after = json.loads(Path("/opt/sglang-ci/runtime-distributions-after.json").read_text())
+          drift = {name: (version, after.get(name)) for name, version in before.items()
+                   if after.get(name) != version}
+          if drift:
+              raise SystemExit(f"Runtime distribution drift: {drift}")
+          print("sglang:", md.version("sglang"))
+          print("runtime distributions preserved:", len(before))
+          print("application additions:", len(set(after) - set(before)))
+          print("patch evidence:", Path("/opt/sglang-ci/sglang-hcu-patch.sha256").read_text().strip())
+          PY
+          EOF
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hygon-application-fixed-image
+          path: |
+            verify-output/
+            image-digest.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log out of Harbor
+        if: always()
+        run: docker logout harbor.baai.ac.cn || true
