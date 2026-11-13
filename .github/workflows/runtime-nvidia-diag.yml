@@ -1,5 +1,5 @@
-# Temporary NVIDIA triton diagnostic. Do not merge into the product branch.
-name: Diagnose nvidia runtime triton layout
+# Temporary NVIDIA Runtime preflight. Never merge into a product branch.
+name: Audit NVIDIA runtime JIT contract
 
 on:
   workflow_dispatch:
@@ -8,11 +8,12 @@ permissions:
   contents: read
 
 jobs:
-  diag:
+  audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
-      IMAGE: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:20b2b506cbd353a6b8f4d4c210cc8b4344f765c226f24c1318bc5deff31285c0
+      BASE_IMAGE: harbor.baai.ac.cn/flagos-runtime/flagos-runtime-nvidia-cuda13.3@sha256:edf29b9a28badaf72fc75fd0e057325df9610694914cca3f571e587038bf17e8
+      CI_IMAGE: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl@sha256:20b2b506cbd353a6b8f4d4c210cc8b4344f765c226f24c1318bc5deff31285c0
     steps:
       - name: Log in to Harbor
         env:
@@ -22,38 +23,169 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3 4 5; do
             if printf '%s' "$HARBOR_PASSWORD" | docker login harbor.baai.ac.cn \
-                 --username "$HARBOR_USERNAME" --password-stdin; then break; fi
+                 --username "$HARBOR_USERNAME" --password-stdin; then
+              exit 0
+            fi
             sleep 15
           done
+          exit 1
 
-      - name: Inspect triton layout with and without the pip wheel
+      - name: Pull immutable images
         run: |
           set -euo pipefail
-          docker pull "$IMAGE"
-          docker run --rm -i --entrypoint /bin/bash "$IMAGE" -s <<'EOF'
-          set -u
-          PY="$(command -v python || command -v python3)"
-          echo "=== image env ==="
-          echo "PYTHONPATH=$PYTHONPATH"
-          echo "=== /opt/flagtree tree (depth 2) ==="
-          find /opt/flagtree -maxdepth 2 | sort | head -40
-          echo "=== triton dists installed ==="
-          "$PY" -m pip list 2>/dev/null | grep -i 'triton\|flagtree' || true
-          probe() {
-            "$PY" - <<PY2
-import importlib.util as u
-for m in ("triton", "triton.compiler", "triton.backends", "triton.backends.nvidia", "triton.backends.nvidia.driver", "triton.runtime", "triton.runtime.jit"):
-    s = u.find_spec(m)
-    print(f"{m:32s} -> {s.origin if s and s.origin else None}")
-PY2
-          }
-          echo "=== resolution WITH pip triton installed (as shipped) ==="
-          probe
-          echo "=== uninstall pip triton, re-probe (simulates not shipping it) ==="
-          "$PY" -m pip uninstall -y triton
-          probe
-          echo "=== with pip triton uninstalled: bare import triton.compiler ==="
-          "$PY" -c "import triton, triton.compiler; print('flagtree-only compiler OK:', triton.__file__, triton.compiler.__file__)" || echo "FAILED: flagtree tree cannot provide triton.compiler alone"
+          docker pull "$CI_IMAGE"
+          docker pull "$BASE_IMAGE"
+          docker image inspect "$CI_IMAGE" --format 'ci={{.Id}} size={{.Size}}'
+          docker image inspect "$BASE_IMAGE" --format 'base={{.Id}} size={{.Size}}'
+
+      - name: Audit raw Runtime toolchain
+        run: |
+          set -euo pipefail
+          docker run --rm -i --entrypoint /bin/bash "$BASE_IMAGE" -s <<'EOF'
+          set +e
+          echo '=== runtime environment ==='
+          env | sort | grep -E '^(CUDA|NV_|NVIDIA|PATH|LD_LIBRARY_PATH|PYTHONPATH)=' || true
+          python - <<'PY'
+          import sys
+          import torch
+          print('python:', sys.version)
+          print('torch:', torch.__version__)
+          print('torch CUDA:', torch.version.cuda)
+          try:
+              from torch.utils.cpp_extension import CUDA_HOME
+              print('torch CUDA_HOME:', CUDA_HOME)
+          except Exception as exc:
+              print('torch CUDA_HOME probe failed:', repr(exc))
+          PY
+
+          echo '=== compiler and build tools ==='
+          for tool in nvcc gcc g++ cc c++ clang clang++ cmake ninja make ld ar; do
+            path=$(command -v "$tool" 2>/dev/null)
+            printf '%-8s %s\n' "$tool" "${path:-MISSING}"
+            if [ -n "$path" ]; then "$path" --version 2>&1 | head -2; fi
+          done
+
+          echo '=== CUDA paths and headers ==='
+          ls -la /usr/local/cuda /usr/local/cuda/bin /usr/local/cuda/include 2>&1 || true
+          for root in /usr/local/cuda /usr/local /flagos; do
+            [ -e "$root" ] || continue
+            find "$root" -xdev -type f \( -name nvcc -o -name cuda_runtime.h -o -name cuda.h -o -name libcudart.so -o -name 'libcudart.so.*' \) -print 2>/dev/null | sort
+          done
+          test -x /usr/local/cuda/bin/nvcc; echo "nvcc executable rc=$?"
+          test -f /usr/local/cuda/include/cuda_runtime.h; echo "cuda_runtime.h rc=$?"
+          test -f /usr/local/cuda/include/cuda.h; echo "cuda.h rc=$?"
+          test -f /usr/include/python3.12/Python.h; echo "Python.h rc=$?"
+          df -h / /tmp /github/home 2>/dev/null || df -h /
+          EOF
+
+      - name: Audit derived SGLang image and native linkage
+        run: |
+          set -euo pipefail
+          docker run --rm -i --entrypoint /bin/bash "$CI_IMAGE" -s <<'EOF'
+          set +e
+          PY=$(command -v python || command -v python3)
+          echo '=== Python distributions relevant to CUDA/JIT ==='
+          "$PY" -m pip list --format=freeze 2>/dev/null | grep -Ei '^(torch|triton|flagtree|flag-gems|sglang|flashinfer|xgrammar|humming|nvidia-|cuda-|ninja|cmake)' | sort
+          "$PY" -m pip check || true
+
+          echo '=== pip NVIDIA distributions and files ==='
+          "$PY" - <<'PY'
+          from importlib import metadata
+          for dist in sorted(metadata.distributions(), key=lambda d: (d.metadata.get('Name') or '').lower()):
+              name = dist.metadata.get('Name') or ''
+              if name.lower().startswith(('nvidia-', 'cuda-')):
+                  print(f'{name}=={dist.version}')
+                  for f in dist.files or ():
+                      s = str(f).lower()
+                      if s.endswith('/nvcc') or s.endswith('cuda_runtime.h') or s.endswith('/cuda.h'):
+                          print('  ', dist.locate_file(f))
+          PY
+
+          echo '=== tools, headers and CUDA layout ==='
+          for tool in nvcc gcc g++ cc c++ clang clang++ cmake ninja make ld ar; do
+            path=$(command -v "$tool" 2>/dev/null)
+            printf '%-8s %s\n' "$tool" "${path:-MISSING}"
+            if [ -n "$path" ]; then "$path" --version 2>&1 | head -2; fi
+          done
+          for root in /usr/local/cuda /usr/local /flagos; do
+            [ -e "$root" ] || continue
+            find "$root" -xdev -type f \( -name nvcc -o -name cuda_runtime.h -o -name cuda.h -o -name libcudart.so -o -name 'libcudart.so.*' \) -print 2>/dev/null | sort
+          done
+          "$PY" - <<'PY'
+          import torch
+          print('torch:', torch.__version__, 'CUDA:', torch.version.cuda)
+          try:
+              from torch.utils.cpp_extension import CUDA_HOME
+              print('torch CUDA_HOME:', CUDA_HOME)
+          except Exception as exc:
+              print('torch CUDA_HOME probe failed:', repr(exc))
+          PY
+
+          echo '=== Triton module provenance before 3.6 alignment ==='
+          "$PY" - <<'PY'
+          import importlib.util as u
+          from importlib import metadata
+          try:
+              print('pip triton:', metadata.version('triton'))
+          except metadata.PackageNotFoundError:
+              print('pip triton: MISSING')
+          for m in ('triton', 'triton.compiler', 'triton.backends',
+                    'triton.backends.nvidia', 'triton.backends.nvidia.driver',
+                    'triton.runtime', 'triton.runtime.jit'):
+              try:
+                  spec = u.find_spec(m)
+                  print(f'{m:34s} -> {spec.origin if spec else None}')
+              except Exception as exc:
+                  print(f'{m:34s} -> ERROR {exc!r}')
+          PY
+
+          echo '=== native extension missing-library scan ==='
+          "$PY" - <<'PY'
+          from importlib import metadata
+          import subprocess
+          for name in ('sglang-kernel', 'flashinfer-python', 'torch', 'flag-gems'):
+              try:
+                  dist = metadata.distribution(name)
+              except metadata.PackageNotFoundError:
+                  print(name, 'MISSING')
+                  continue
+              print(f'[{name}=={dist.version}]')
+              so_files = [dist.locate_file(f) for f in dist.files or () if str(f).endswith('.so')]
+              for path in so_files[:80]:
+                  proc = subprocess.run(['ldd', str(path)], text=True, capture_output=True)
+                  missing = [line.strip() for line in proc.stdout.splitlines() if 'not found' in line]
+                  if missing:
+                      print(path)
+                      for line in missing:
+                          print('  ', line)
+          PY
+
+          echo '=== JIT/cache prerequisites ==='
+          for path in /tmp /github/home /root/.cache /github/home/.cache; do
+            mkdir -p "$path" 2>/dev/null
+            probe="$path/.sglang-write-probe"
+            if : > "$probe" 2>/dev/null; then echo "$path writable"; rm -f "$probe"; else echo "$path NOT_WRITABLE"; fi
+          done
+          df -h / /tmp /github/home 2>/dev/null || df -h /
+          find /flagos/lib/python3.12/site-packages/sglang -type f -name '*.py' -print0 2>/dev/null \
+            | xargs -0 grep -nE '/usr/local/cuda/bin/nvcc|CUDA_HOME|cuda_runtime.h' 2>/dev/null \
+            | head -120 || true
+
+          echo '=== Triton provenance after ephemeral 3.6 alignment ==='
+          "$PY" -m pip install --no-deps triton==3.6.0
+          "$PY" - <<'PY'
+          import importlib.util as u
+          from importlib import metadata
+          print('pip triton:', metadata.version('triton'))
+          for m in ('triton', 'triton.compiler', 'triton.backends',
+                    'triton.backends.nvidia', 'triton.backends.nvidia.driver',
+                    'triton.runtime', 'triton.runtime.jit'):
+              try:
+                  spec = u.find_spec(m)
+                  print(f'{m:34s} -> {spec.origin if spec else None}')
+              except Exception as exc:
+                  print(f'{m:34s} -> ERROR {exc!r}')
+          PY
           EOF
 
       - name: Log out of Harbor
