@@ -63,7 +63,7 @@ jobs:
           done
 
       - name: Inspect base image inventory
-        if: ${{ inputs.verify_only != true }}
+        if: ${{ !fromJSON(inputs.verify_only) }}
         run: |
           set -euo pipefail
           base="${BASE_IMAGE:-}"
@@ -197,7 +197,7 @@ jobs:
           CONTAINERFILE: ${{ inputs.containerfile }}
 
       - name: Build and push image
-        if: ${{ inputs.verify_only != true }}
+        if: ${{ !fromJSON(inputs.verify_only) }}
         env:
           IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
           IMAGE_TAG: ${{ inputs.image_tag }}
