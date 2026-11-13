@@ -19,7 +19,7 @@ permissions:
 
 env:
   IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
-  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261113-appfix6
+  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261113-appfix6b
   CONTAINERFILE: docker/hygon/runtime-0.5.18.containerfile
 
 jobs:
@@ -134,7 +134,9 @@ jobs:
           blobs = [l["digest"] for l in m.get("layers", [])] + [m.get("config", {}).get("digest") if isinstance(m.get("config"), dict) else m.get("config")]
 
           deadline = time.time() + 165 * 60
-          chunk = 16 << 20
+          # Harbor can fall below 70 KiB/s on this cross-ocean path. Keep a
+          # single PATCH comfortably below the 240s request timeout.
+          chunk = 2 << 20
           for digest in blobs:
               digest = digest.removeprefix("sha256:")
               try:

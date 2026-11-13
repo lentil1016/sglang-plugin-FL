@@ -47,11 +47,6 @@ WORKDIR /opt/sglang-ci
 # drift across indexes cannot change the closure; the dry-run gate still
 # verifies zero runtime replacements on top of it.
 COPY docker/hygon/runtime-0.5.18.additions.lock /opt/sglang-ci/sglang-additions.lock
-# SGLang reads scalar-type metadata while building its quantization registry,
-# even when no NVIDIA kernel is selected. This is pure Python metadata from
-# the matching SGLang 0.5.18 compatibility source, not an accelerator wheel.
-COPY addon/iluvatar-compat/src/sgl_kernel/scalar_type.py \
-     /opt/sglang-ci/hcu-import-compat/sgl_kernel/scalar_type.py
 
 # --- Stable, slow: fetch and SHA256-verify the SGLang wheel ------------------
 # Pure-Python downloader so the build depends only on the runtime's own Python.
@@ -321,6 +316,10 @@ RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
 # iluvatar empty-image import shims.  No dist-info is emitted on purpose:
 # pip/importlib.metadata stay byte-compatible with the reviewed closure, and
 # the engine's wheel-version probe is disabled via ENV below.
+# Keep this volatile compatibility input after the stable SGLang installation
+# layers so changes do not invalidate or repush the large dependency closure.
+COPY addon/iluvatar-compat/src/sgl_kernel/scalar_type.py \
+     /opt/sglang-ci/hcu-import-compat/sgl_kernel/scalar_type.py
 RUN export PYTHON_BIN="$(command -v python || command -v python3)" \
     && PURELIB="$("$PYTHON_BIN" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
     && mkdir -p "$PURELIB/sgl_kernel/utils" "$PURELIB/flashinfer" \
