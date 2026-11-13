@@ -19,7 +19,7 @@ permissions:
 
 env:
   IMAGE_REPO: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl
-  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261112-appfix5
+  IMAGE_TAG: 0.5.18-hygon-runtime-ci-20261113-appfix6
   CONTAINERFILE: docker/hygon/runtime-0.5.18.containerfile
 
 jobs:
@@ -33,6 +33,7 @@ jobs:
         with:
           sparse-checkout: |
             docker/hygon/
+            addon/iluvatar-compat/src/sgl_kernel/scalar_type.py
 
       - name: Log in to Harbor
         env:
