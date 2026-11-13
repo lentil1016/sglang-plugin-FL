@@ -43,6 +43,7 @@ jobs:
           set -euo pipefail
           docker run --rm -i --entrypoint /bin/bash "$BASE_IMAGE" -s <<'EOF'
           set +e
+          export TORCH_DEVICE_BACKEND_AUTOLOAD=0
           echo '=== runtime environment ==='
           env | sort | grep -E '^(CUDA|NV_|NVIDIA|PATH|LD_LIBRARY_PATH|PYTHONPATH)=' || true
           python - <<'PY'
@@ -83,6 +84,7 @@ jobs:
           set -euo pipefail
           docker run --rm -i --entrypoint /bin/bash "$CI_IMAGE" -s <<'EOF'
           set +e
+          export TORCH_DEVICE_BACKEND_AUTOLOAD=0
           PY=$(command -v python || command -v python3)
           echo '=== Python distributions relevant to CUDA/JIT ==='
           "$PY" -m pip list --format=freeze 2>/dev/null | grep -Ei '^(torch|triton|flagtree|flag-gems|sglang|flashinfer|xgrammar|humming|nvidia-|cuda-|ninja|cmake)' | sort
@@ -121,23 +123,39 @@ jobs:
               print('torch CUDA_HOME probe failed:', repr(exc))
           PY
 
+          echo '=== activate pip CUDA toolkit and compile sm80 smoke ==='
+          PIP_CUDA_HOME=/flagos/lib/python3.12/site-packages/nvidia/cu13
+          export CUDA_HOME="$PIP_CUDA_HOME"
+          export CUDA_PATH="$PIP_CUDA_HOME"
+          export PATH="$PIP_CUDA_HOME/bin:$PATH"
+          export LD_LIBRARY_PATH="$PIP_CUDA_HOME/lib:${LD_LIBRARY_PATH:-}"
+          "$PIP_CUDA_HOME/bin/nvcc" --version
+          find "$PIP_CUDA_HOME" -maxdepth 3 -type f \( -name cicc -o -name ptxas -o -name nvlink -o -name fatbinary \) -print | sort
+          printf '%s\n' \
+            '#include <cuda_runtime.h>' \
+            '__global__ void probe_kernel() {}' \
+            'int main() { return 0; }' \
+            | "$PIP_CUDA_HOME/bin/nvcc" -x cu -std=c++17 \
+                -gencode=arch=compute_80,code=sm_80 -c -o /tmp/sglang-jit-probe.o -
+          compile_rc=$?
+          echo "pip CUDA toolkit sm80 compile rc=$compile_rc"
+          test -s /tmp/sglang-jit-probe.o && file /tmp/sglang-jit-probe.o || true
+
           echo '=== Triton module provenance before 3.6 alignment ==='
-          "$PY" - <<'PY'
+          "$PY" -c 'from importlib import metadata; print("pip triton:", metadata.version("triton"))'
+          for module in triton triton.compiler triton.backends triton.backends.nvidia \
+                        triton.backends.nvidia.driver triton.runtime triton.runtime.jit; do
+            MODULE="$module" "$PY" - <<'PY'
           import importlib.util as u
-          from importlib import metadata
+          import os
+          module = os.environ['MODULE']
           try:
-              print('pip triton:', metadata.version('triton'))
-          except metadata.PackageNotFoundError:
-              print('pip triton: MISSING')
-          for m in ('triton', 'triton.compiler', 'triton.backends',
-                    'triton.backends.nvidia', 'triton.backends.nvidia.driver',
-                    'triton.runtime', 'triton.runtime.jit'):
-              try:
-                  spec = u.find_spec(m)
-                  print(f'{m:34s} -> {spec.origin if spec else None}')
-              except Exception as exc:
-                  print(f'{m:34s} -> ERROR {exc!r}')
+              spec = u.find_spec(module)
+              print(f'{module:34s} -> {spec.origin if spec else None}')
+          except BaseException as exc:
+              print(f'{module:34s} -> ERROR {exc!r}')
           PY
+          done
 
           echo '=== native extension missing-library scan ==='
           "$PY" - <<'PY'
@@ -173,19 +191,21 @@ jobs:
 
           echo '=== Triton provenance after ephemeral 3.6 alignment ==='
           "$PY" -m pip install --no-deps triton==3.6.0
-          "$PY" - <<'PY'
+          "$PY" -c 'from importlib import metadata; print("pip triton:", metadata.version("triton"))'
+          for module in triton triton.compiler triton.backends triton.backends.nvidia \
+                        triton.backends.nvidia.driver triton.runtime triton.runtime.jit; do
+            MODULE="$module" "$PY" - <<'PY'
           import importlib.util as u
-          from importlib import metadata
-          print('pip triton:', metadata.version('triton'))
-          for m in ('triton', 'triton.compiler', 'triton.backends',
-                    'triton.backends.nvidia', 'triton.backends.nvidia.driver',
-                    'triton.runtime', 'triton.runtime.jit'):
-              try:
-                  spec = u.find_spec(m)
-                  print(f'{m:34s} -> {spec.origin if spec else None}')
-              except Exception as exc:
-                  print(f'{m:34s} -> ERROR {exc!r}')
+          import os
+          module = os.environ['MODULE']
+          try:
+              spec = u.find_spec(module)
+              print(f'{module:34s} -> {spec.origin if spec else None}')
+          except BaseException as exc:
+              print(f'{module:34s} -> ERROR {exc!r}')
           PY
+          done
+          exit 0
           EOF
 
       - name: Log out of Harbor
