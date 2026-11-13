@@ -23,8 +23,9 @@
 #
 # Push target: harbor.baai.ac.cn/flagos-dev/sglang-plugin-fl:0.2.0-thead-ci
 
-# Runtime rebuilt by build-infra PR #1738; see issue #1730.
-ARG BASE_IMAGE=harbor.baai.ac.cn/flagos-runtime/flagos-runtime-thead-ppu2.1.0@sha256:163faf04cac90612954f32b0f45eef90223708fd3de0408497570ee4fd3b408d
+# Runtime rebuilt by build-infra PR #1738; see issue #1730.  Republished per
+# #1773 as tag 2.3.0 with CUDA-13 vendor torchvision/torchaudio wheels.
+ARG BASE_IMAGE=harbor.baai.ac.cn/flagos-runtime/flagos-runtime-thead-ppu2.1.0@sha256:7837256c2dab931c762f86713a37d3fbecc902792392d67731c982ecda632cef
 
 FROM ${BASE_IMAGE}
 

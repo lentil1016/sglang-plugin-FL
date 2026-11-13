@@ -1,5 +1,5 @@
 # Exact added closure over the thead runtime (flagos-runtime-thead-ppu2.1.0
-# @sha256:163faf04...): SGLang 0.5.18 srt_empty + pip-resolved dependencies
+# @sha256:7837256c...): SGLang 0.5.18 srt_empty + pip-resolved dependencies
 # + the startup-failure-selected application extras (xgrammar,
 # compressed-tensors, loguru).  Generated mechanically from the green
 # resolution of run 43186215541 (no hand transcription).  The install script

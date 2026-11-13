@@ -12,11 +12,14 @@
 # (unit/functional/qwen3 4b_tp2 e2e) does not need them; re-adding any of them
 # requires a fresh hardware failure as evidence.
 #
-# The vendor torchvision/torchaudio wheels currently fail to import on a
-# device-less builder (torchvision::nms op not registered; libtorchaudio.so
-# will not load).  The cause is not yet determined; on-device verification
-# decides.  Until then the build-time contracts assert them only as installed
-# distributions, and the on-device probe (CI setup) plus the
+# The first publishing of this runtime (sha256:163faf04..., built 12:06)
+# shipped vendor torchvision/torchaudio wheels built against CUDA 12.9: on
+# real PPU hardware they failed to import with `libcudart.so.12 => not found`
+# while the PPU SDK ships libcudart.so.13 (build-infra #1773; probe on origin
+# job 131399971935).  The runtime was republished as tag 2.3.0
+# (sha256:7837256c..., built 12:27, same distribution versions) with CUDA-13
+# vendor wheels.  The build-time contracts still assert the vendor stack as
+# installed distributions only; the on-device probe (CI setup) plus the
 # unit/functional/e2e stages exercise the real imports.
 #
 # Layers are ordered so that frequently changing inputs come last, and every
@@ -34,13 +37,14 @@
 # Build from the repository root:
 #   docker build -f docker/thead/empty-0.5.18.containerfile \
 #     -t sglang-plugin-fl:thead-empty-0.5.18 .
-# BASE_IMAGE is the runtime rebuilt by build-infra PR #1738.  Keep it
+# BASE_IMAGE is the operations runtime (build-infra PR #1738; republished per
+# build-infra #1773 as tag 2.3.0 with CUDA-13 vendor wheels).  Keep it
 # digest-pinned.  If the default PIP_INDEX_URL (official PyPI) is slow from the
 # build host, pass
 #   --build-arg PIP_INDEX_URL=https://aiext-pypi.mirrors.aliyuncs.com/pg1-pip/ubuntu_cu130/simple/
 #
 # Run: PPU devices are passed with --device /dev/alixpu* (see .github/configs/thead.yml).
-ARG BASE_IMAGE=harbor.baai.ac.cn/flagos-runtime/flagos-runtime-thead-ppu2.1.0@sha256:163faf04cac90612954f32b0f45eef90223708fd3de0408497570ee4fd3b408d
+ARG BASE_IMAGE=harbor.baai.ac.cn/flagos-runtime/flagos-runtime-thead-ppu2.1.0@sha256:7837256c2dab931c762f86713a37d3fbecc902792392d67731c982ecda632cef
 FROM ${BASE_IMAGE}
 
 ARG SGLANG_VERSION=0.5.18
