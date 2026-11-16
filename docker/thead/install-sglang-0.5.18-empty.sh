@@ -108,14 +108,15 @@ for key in sorted(inventory):
 # forbid introducing one when the runtime itself does not ship a triton dist.
 if "triton" not in inventory:
     lines.append("triton<0")
-# Reviewed app-level pin: the runtime owns numpy 1.26.4 and pyarrow >= 26
-# refuses to import against it (benchmark module: "pyarrow requires NumPy
-# 2.0 or newer").  22.0.0 is the documented-good pin (green benchmark on
-# run 42745905972; the 26.0.1 resolution drift failed again on run
-# 43821289219).  datasets 5.1+ requires pyarrow>=24, so pin the newest
-# coexisting datasets (5.0.0 wants pyarrow>=21, numpy>=1.17).
-lines.append("pyarrow==22.0.0")
-lines.append("datasets==5.0.0")
+# Reviewed app-level pin: the runtime owns numpy 1.26.4 and pyarrow 26
+# refuses to import against it (benchmark: "pyarrow requires NumPy 2.0 or
+# newer", run 43821289219).  25.0.0 is the highest release that imports
+# cleanly with numpy 1.26.4 (probed 23/24/25 OK, 26 fails) and still
+# satisfies datasets' pyarrow>=24.  (The historical 22.0.0 pin is
+# unreachable here: every datasets that allows pyarrow 22 caps fsspec
+# below the runtime's fsspec==2026.9.0, which drove the resolver to
+# resolution-too-deep, runs 43826897585/43832945058.)
+lines.append("pyarrow==25.0.0")
 Path(constraints_path).write_text("\n".join(lines) + "\n")
 Path(snapshot_path).write_text(
     "".join(f"{inventory[k][0]}=={inventory[k][1]}\n" for k in sorted(inventory)))
