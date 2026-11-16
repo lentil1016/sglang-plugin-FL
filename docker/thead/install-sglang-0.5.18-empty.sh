@@ -108,6 +108,12 @@ for key in sorted(inventory):
 # forbid introducing one when the runtime itself does not ship a triton dist.
 if "triton" not in inventory:
     lines.append("triton<0")
+# Reviewed app-level pin: the runtime owns numpy 1.26.4 and pyarrow >= 26
+# refuses to import against it (benchmark module: "pyarrow requires NumPy
+# 2.0 or newer").  22.0.0 is the documented-good pin (green benchmark on
+# run 42745905972; the 26.0.1 resolution drift failed again on run
+# 43821289219).  Applies to a TRANSITIVE dependency of srt_empty.
+lines.append("pyarrow==22.0.0")
 Path(constraints_path).write_text("\n".join(lines) + "\n")
 Path(snapshot_path).write_text(
     "".join(f"{inventory[k][0]}=={inventory[k][1]}\n" for k in sorted(inventory)))

@@ -5,7 +5,7 @@
 # resolution of run 43453739481 (no hand transcription).  The install script
 # fails the build when the live resolution deviates from this lock in name,
 # version, or count (PyPI drift guard).  Regenerate the same way after an
-# intentional dependency change.  2026-11-13: regenerated for upstream
+# intentional dependency change.  2026-11-16: pyarrow pinned to the documented-good 22.0.0 (runtime numpy 1.26.4 vs pyarrow>=26 import break; green precedent run 42745905972, failure run 43821289219); see install script constraints.  2026-11-13: regenerated for upstream
 # fastapi 0.162.5 -> 0.162.6 (first caught by the guard during the 2.3.0
 # runtime rebuild; no other drift).
 aiohappyeyeballs==2.7.1
@@ -83,7 +83,7 @@ psutil==7.2.2
 ptyprocess==0.7.0
 pure-eval==0.2.4
 py-spy==0.4.3
-pyarrow==26.0.1
+pyarrow==22.0.0
 pybase64==1.5.2
 pycountry==26.2.16
 pycparser==3.12
