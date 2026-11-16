@@ -112,8 +112,10 @@ if "triton" not in inventory:
 # refuses to import against it (benchmark module: "pyarrow requires NumPy
 # 2.0 or newer").  22.0.0 is the documented-good pin (green benchmark on
 # run 42745905972; the 26.0.1 resolution drift failed again on run
-# 43821289219).  Applies to a TRANSITIVE dependency of srt_empty.
+# 43821289219).  datasets 5.1+ requires pyarrow>=24, so pin the newest
+# coexisting datasets (5.0.0 wants pyarrow>=21, numpy>=1.17).
 lines.append("pyarrow==22.0.0")
+lines.append("datasets==5.0.0")
 Path(constraints_path).write_text("\n".join(lines) + "\n")
 Path(snapshot_path).write_text(
     "".join(f"{inventory[k][0]}=={inventory[k][1]}\n" for k in sorted(inventory)))
