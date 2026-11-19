@@ -1,0 +1,25 @@
+# Platform resolution constraints for the T-Head two-wheel install.
+#
+# These are RESOLUTION constraints for the image build's resolver only
+# (passed via uv --constraints, hygon precedent): they steer the SGLang
+# dependency closure away from distributions the operations Runtime owns,
+# and are deliberately NOT declared in the sglang_fl wheel — the wheel
+# METADATA states what the plugin itself requires, the platform-specific
+# compatibility steering lives in this file.
+#
+# Keep this file to these two requirements.
+
+# The operations Runtime owns NumPy 1.26.4. Without this pin the SGLang
+# runtime_base closure (scipy, datasets, pandas...) can select a NumPy 2
+# line during an otherwise ordinary install, which would REPLACE a Runtime
+# distribution and fail the runtime-immutability verifier.
+numpy==1.26.4
+
+# datasets pulls pyarrow>=15. pyarrow's wheel metadata carries NO numpy
+# bound (verified on PyPI for 24.0.0/25.0.x/26.0.x on 2026-11-19), so an
+# unconstrained resolver takes the newest release unconditionally. The cap
+# keeps the closure on the <26 line — the newest line that the NVIDIA
+# two-wheel install validated against Runtime-owned NumPy 1.26.4; pyarrow
+# 26.x is unvalidated on any FlagOS platform so far. Lifting this cap is a
+# device-phase decision, not a build default.
+pyarrow>=24,<26

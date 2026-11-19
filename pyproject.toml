@@ -28,6 +28,19 @@ dependencies = [
 
 [project.optional-dependencies]
 cuda = ["sglang==0.5.18"]
+# The thead extra carries exactly one requirement: the platform anchor.
+# Everything else the install needs is either Runtime-owned (flag_gems
+# 5.4.0 — metadata Name spelled `flag_gems` — and pyyaml 6.0.1, both
+# declared by the generic dependencies above with code evidence in
+# sglang_fl/dispatch/backends/flagos/ and sglang_fl/dispatch/config/
+# utils.py + policy.py), served by the plugin's semantic sgl_kernel
+# placeholder (vendor/thead/import_guard.py), or resolved transitively
+# from the SGLang wheel.  Version pinning for platform compatibility is a
+# RESOLUTION constraint, not a dependency declaration: the
+# docker/thead/top-level-constraints.txt file pins numpy/pyarrow for the
+# image build's resolver only, so the wheel METADATA stays an honest
+# statement of what the plugin itself requires.
+thead = ["sglang==0.5.18"]
 
 [project.entry-points."sglang.srt.platforms"]
 sglang_fl = "sglang_fl:activate_platform"
