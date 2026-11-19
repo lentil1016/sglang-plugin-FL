@@ -1,0 +1,20 @@
+# Single-item resolver exclusion for the T-Head two-wheel CI image.
+#
+# The operations Runtime provides the Triton compiler as the /opt/flagtree
+# module tree (Triton 3.6.0, FlagTree 0.7.0+ppu3.6); the runtime image
+# itself exposes no PYTHONPATH, so the two-wheel image bakes
+# PYTHONPATH=/opt/flagtree as the activation (same pattern as Hygon).
+# There is no standalone triton pip distribution in the Runtime (its
+# /opt/triton slot holds a separate vendor Triton 3.5.0 tree that nothing
+# puts on sys.path), so the two-wheel install must resolve the
+# application closure without any standalone triton distribution:
+# xgrammar==0.2.1 declares
+# `triton; platform_system == "Linux" and platform_machine == "x86_64"`
+# in its metadata, which is the documented gap pip check reports and the
+# runtime verifier accepts as the platform capability exception. uv drops
+# exactly this package from resolution; nothing is installed, uninstalled,
+# or stubbed for it.
+#
+# Keep this file to this one requirement; every other dependency resolves
+# normally from wheel METADATA.
+triton
